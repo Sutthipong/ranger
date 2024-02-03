@@ -17,21 +17,38 @@
  * under the License.
  */
 
-import React, { lazy, useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Button, Modal } from "react-bootstrap";
-import { useLocation, Outlet, Navigate } from "react-router-dom";
+import {
+  useLocation,
+  Outlet,
+  Navigate,
+  useNavigate,
+  matchRoutes
+} from "react-router-dom";
 import ErrorPage from "./ErrorPage";
-import { hasAccessToPath } from "Utils/XAUtils";
+import {
+  hasAccessToPath,
+  checkKnoxSSO,
+  navigateTo,
+  getLandingPageURl
+} from "Utils/XAUtils";
 import { useIdleTimer } from "react-idle-timer";
-import { setUserProfile, getUserProfile } from "Utils/appState";
-
-const HeaderComp = lazy(() => import("Views/Header"));
+import { getUserProfile } from "Utils/appState";
+import SideBar from "./SideBar/SideBar";
+import { Loader } from "../components/CommonComponents";
+import { Suspense } from "react";
+import { PathAssociateWithModule } from "../utils/XAEnums";
+import { flatMap, values } from "lodash";
 
 const Layout = () => {
   let location = useLocation();
+  const navigate = useNavigate();
   const userProfile = getUserProfile();
+  navigateTo.navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [timer, setTimer] = useState(0);
+
   const timeout =
     1000 *
     (userProfile?.configProperties?.inactivityTimeout > 0
@@ -39,23 +56,9 @@ const Layout = () => {
       : 900);
   const promptTimeout = 1000 * 15;
 
-  const handleLogout = async (e) => {
-    try {
-      const { fetchApi } = await import("Utils/fetchAPI");
-      await fetchApi({
-        url: "logout",
-        baseURL: "",
-        headers: {
-          "cache-control": "no-cache"
-        }
-      });
-      setUserProfile(null);
-      window.localStorage.clear();
-      setOpen(false);
-      window.location.replace("login.jsp");
-    } catch (error) {
-      console.error(`Error occurred while login! ${error}`);
-    }
+  const handleLogout = async () => {
+    setOpen(false);
+    checkKnoxSSO(navigate);
   };
 
   const onPrompt = () => {
@@ -103,7 +106,7 @@ const Layout = () => {
   }, [getRemainingTime, isPrompted]);
 
   return (
-    <>
+    <React.Fragment>
       <Modal show={open}>
         <Modal.Header className="pd-10">
           <h6>
@@ -111,7 +114,7 @@ const Layout = () => {
           </h6>
         </Modal.Header>
         <Modal.Body className="fnt-14">
-          <span class="d-inline-block">
+          <span className="d-inline-block">
             Because you have been inactive, your session is about to expire.
             <br />
             <div id="Timer">
@@ -121,36 +124,58 @@ const Layout = () => {
         </Modal.Body>
         <Modal.Footer>
           <Button onClick={handleStillHere}>Stay Logged in</Button>
-          <Button variant="danger" onClick={handleLogout}>
+          <Button variant="danger" onClick={() => handleLogout()}>
             Log Out Now
           </Button>
         </Modal.Footer>
       </Modal>
-      <HeaderComp />
-      {location.pathname === "/" && (
-        <Navigate to="/policymanager/resource" replace={true} />
-      )}
-      <section className="container-fluid" style={{ minHeight: "80vh" }}>
-        <div id="ranger-content">
-          {hasAccessToPath(location.pathname) ? <Outlet /> : <ErrorPage />}
+      <React.Fragment>
+        <div className="wrapper">
+          <SideBar />
         </div>
-      </section>
-      <footer>
-        <div className="main-footer">
-          <div className="pull-left copy-right-text">
-            <p className="text-left">
-              <a
-                target="_blank"
-                href="http://www.apache.org/licenses/LICENSE-2.0"
-                rel="noopener noreferrer"
-              >
-                Licensed under the Apache License, Version 2.0
-              </a>
-            </p>
+        {location.pathname === "/" &&
+          window.location.pathname !== "/locallogin" &&
+          window.location.pathname != "/dataNotFound" &&
+          window.location.pathname != "/pageNotFound" &&
+          window.location.pathname != "/forbidden" && (
+            <Navigate to={getLandingPageURl()} replace={true} />
+          )}
+        <div id="content" className="content-body">
+          <div id="ranger-content">
+            {matchRoutes(
+              flatMap(values(PathAssociateWithModule)).map((val) => ({
+                path: val
+              })),
+              location.pathname
+            ) ? (
+              hasAccessToPath(location.pathname) ? (
+                <Suspense fallback={<Loader />}>
+                  <Outlet />
+                </Suspense>
+              ) : (
+                <ErrorPage errorCode="401" />
+              )
+            ) : (
+              <ErrorPage errorCode="404" />
+            )}
           </div>
+
+          <footer>
+            <div className="main-footer">
+              <p className="text-left">
+                <a
+                  target="_blank"
+                  href="http://www.apache.org/licenses/LICENSE-2.0"
+                  rel="noopener noreferrer"
+                >
+                  Licensed under the Apache License, Version 2.0
+                </a>
+              </p>
+            </div>
+          </footer>
         </div>
-      </footer>
-    </>
+      </React.Fragment>
+    </React.Fragment>
   );
 };
 

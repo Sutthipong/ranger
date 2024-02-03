@@ -301,6 +301,8 @@ public abstract class RangerDaoManagerBase {
 
 	public XXSecurityZoneRefGroupDao getXXSecurityZoneRefGroup() { return new XXSecurityZoneRefGroupDao(this); }
 
+	public XXSecurityZoneRefRoleDao getXXSecurityZoneRefRole() { return new XXSecurityZoneRefRoleDao(this); }
+
 	public XXGlobalStateDao getXXGlobalState() { return new XXGlobalStateDao(this); }
 
 	public XXPolicyChangeLogDao getXXPolicyChangeLog() { return new XXPolicyChangeLogDao(this); }
@@ -322,6 +324,13 @@ public abstract class RangerDaoManagerBase {
 	public XXRMSServiceResourceDao getXXRMSServiceResource() { return new XXRMSServiceResourceDao(this); }
 	public XXRMSResourceMappingDao getXXRMSResourceMapping() { return new XXRMSResourceMappingDao(this); }
 
-
+	public XXGdsDatasetDao getXXGdsDataset() { return new XXGdsDatasetDao(this); }
+	public XXGdsProjectDao getXXGdsProject() { return new XXGdsProjectDao(this); }
+	public XXGdsDataShareDao getXXGdsDataShare() { return new XXGdsDataShareDao(this); }
+	public XXGdsSharedResourceDao getXXGdsSharedResource() { return new XXGdsSharedResourceDao(this); }
+	public XXGdsDataShareInDatasetDao getXXGdsDataShareInDataset() { return new XXGdsDataShareInDatasetDao(this); }
+	public XXGdsDatasetInProjectDao getXXGdsDatasetInProject() { return new XXGdsDatasetInProjectDao(this); }
+	public XXGdsDatasetPolicyMapDao getXXGdsDatasetPolicyMap() { return new XXGdsDatasetPolicyMapDao(this); }
+	public XXGdsProjectPolicyMapDao getXXGdsProjectPolicyMap() { return new XXGdsProjectPolicyMapDao(this); }
 }
 

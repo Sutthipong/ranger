@@ -415,6 +415,18 @@ public class RangerPolicyValidator extends RangerValidator {
 					for(RangerAccessTypeDef rangerAccessTypeDef:serviceDef.getRowFilterDef().getAccessTypes()){
 						rowFilterAccessTypeDefNames.add(rangerAccessTypeDef.getName().toLowerCase());
 					}
+
+					if (serviceDef.getMarkerAccessTypes() != null) {
+						for (RangerAccessTypeDef accessTypeDef : serviceDef.getMarkerAccessTypes()) {
+							if (accessTypeDef == null || accessTypeDef.getImpliedGrants() == null) {
+								continue;
+							}
+
+							if (CollectionUtils.containsAny(accessTypeDef.getImpliedGrants(), rowFilterAccessTypeDefNames)) {
+								rowFilterAccessTypeDefNames.add(accessTypeDef.getName());
+							}
+						}
+					}
 				}
 			}
 
@@ -444,6 +456,18 @@ public class RangerPolicyValidator extends RangerValidator {
 				if(!CollectionUtils.isEmpty(serviceDef.getDataMaskDef().getAccessTypes())){
 					for(RangerAccessTypeDef rangerAccessTypeDef:serviceDef.getDataMaskDef().getAccessTypes()){
 						dataMaskAccessTypeDefNames.add(rangerAccessTypeDef.getName().toLowerCase());
+					}
+
+					if (serviceDef.getMarkerAccessTypes() != null) {
+						for (RangerAccessTypeDef accessTypeDef : serviceDef.getMarkerAccessTypes()) {
+							if (accessTypeDef == null || accessTypeDef.getImpliedGrants() == null) {
+								continue;
+							}
+
+							if (CollectionUtils.containsAny(accessTypeDef.getImpliedGrants(), dataMaskAccessTypeDefNames)) {
+								dataMaskAccessTypeDefNames.add(accessTypeDef.getName());
+							}
+						}
 					}
 				}
 			}
@@ -947,7 +971,9 @@ public class RangerPolicyValidator extends RangerValidator {
 		if(LOG.isDebugEnabled()) {
 			LOG.debug(String.format("==> RangerPolicyValidator.isValid(%s, %s, %s)", policyItem, failures, serviceDef));
 		}
-		
+
+		List<String> invalidItems = new ArrayList<String>(Arrays.asList("null", "NULL", "Null", null));
+
 		boolean valid = true;
 		if (policyItem == null) {
 			LOG.debug("policy item was null!");
@@ -973,12 +999,43 @@ public class RangerPolicyValidator extends RangerValidator {
 			if (CollectionUtils.isEmpty(policyItem.getUsers()) && CollectionUtils.isEmpty(policyItem.getGroups()) && CollectionUtils.isEmpty(policyItem.getRoles())) {
 				ValidationErrorCode error = ValidationErrorCode.POLICY_VALIDATION_ERR_MISSING_USER_AND_GROUPS;
 				failures.add(new ValidationFailureDetailsBuilder()
-					.field("policy item users/user-groups/roles")
-					.isMissing()
-					.becauseOf(error.getMessage())
-					.errorCode(error.getErrorCode())
-					.build());
+						.field("policy item users/user-groups/roles")
+						.isMissing()
+						.becauseOf(error.getMessage())
+						.errorCode(error.getErrorCode())
+						.build());
 				valid = false;
+			} else {
+				if (CollectionUtils.isNotEmpty(policyItem.getUsers()) && CollectionUtils.containsAny(policyItem.getUsers(), invalidItems)) {
+					ValidationErrorCode error = ValidationErrorCode.POLICY_VALIDATION_ERR_NULL_POLICY_ITEM_USER;
+					failures.add(new ValidationFailureDetailsBuilder()
+							.field("policy item users")
+							.isMissing()
+							.becauseOf(error.getMessage())
+							.errorCode(error.getErrorCode())
+							.build());
+					valid = false;
+				}
+				if (CollectionUtils.isNotEmpty(policyItem.getGroups()) && CollectionUtils.containsAny(policyItem.getGroups(), invalidItems)) {
+					ValidationErrorCode error = ValidationErrorCode.POLICY_VALIDATION_ERR_NULL_POLICY_ITEM_GROUP;
+					failures.add(new ValidationFailureDetailsBuilder()
+							.field("policy item groups")
+							.isMissing()
+							.becauseOf(error.getMessage())
+							.errorCode(error.getErrorCode())
+							.build());
+					valid = false;
+				}
+				if (CollectionUtils.isNotEmpty(policyItem.getRoles()) && CollectionUtils.containsAny(policyItem.getRoles(), invalidItems)) {
+					ValidationErrorCode error = ValidationErrorCode.POLICY_VALIDATION_ERR_NULL_POLICY_ITEM_ROLE;
+					failures.add(new ValidationFailureDetailsBuilder()
+							.field("policy item roles")
+							.isMissing()
+							.becauseOf(error.getMessage())
+							.errorCode(error.getErrorCode())
+							.build());
+					valid = false;
+				}
 			}
 		}
 

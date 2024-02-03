@@ -18,7 +18,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useOutletContext, Link } from "react-router-dom";
 import { Badge, Button, Row, Col, Table, Modal } from "react-bootstrap";
 import XATableLayout from "Components/XATableLayout";
 import dateFormat from "dateformat";
@@ -31,7 +31,6 @@ import {
 import moment from "moment-timezone";
 import AccessLogsTable from "./AccessLogsTable";
 import {
-  find,
   isEmpty,
   isUndefined,
   pick,
@@ -41,10 +40,12 @@ import {
   toString,
   toUpper,
   has,
-  filter
+  filter,
+  find,
+  isArray
 } from "lodash";
 import { toast } from "react-toastify";
-import { Link } from "react-router-dom";
+import qs from "qs";
 import { AccessMoreLess } from "Components/CommonComponents";
 import { PolicyViewDetails } from "./AdminLogs/PolicyViewDetails";
 import StructuredFilter from "../../components/structured-filter/react-typeahead/tokenizer";
@@ -54,16 +55,24 @@ import {
   getTableSortBy,
   getTableSortType,
   serverError,
-  fetchSearchFilterParams
+  requestDataTitle,
+  fetchSearchFilterParams,
+  parseSearchFilter
 } from "../../utils/XAUtils";
 import { CustomTooltip, Loader } from "../../components/CommonComponents";
-import { ServiceType } from "../../utils/XAEnums";
+import {
+  ServiceRequestDataRangerAcl,
+  ServiceRequestDataHadoopAcl
+} from "../../utils/XAEnums";
+import { getServiceDef } from "../../utils/appState";
 
 function Access() {
+  const context = useOutletContext();
+  const services = context.services;
+  const servicesAvailable = context.servicesAvailable;
   const isKMSRole = isKeyAdmin() || isKMSAuditor();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [accessListingData, setAccessLogs] = useState([]);
-  const [serviceDefs, setServiceDefs] = useState([]);
-  const [services, setServices] = useState([]);
   const [zones, setZones] = useState([]);
   const [loader, setLoader] = useState(true);
   const [pageCount, setPageCount] = React.useState(0);
@@ -73,69 +82,91 @@ function Access() {
   const [policyviewmodal, setPolicyViewModal] = useState(false);
   const [policyParamsData, setPolicyParamsData] = useState(null);
   const [rowdata, setRowData] = useState([]);
-  const [checked, setChecked] = useState(false);
+  const [checked, setChecked] = useState(() => {
+    let urlParam = Object.fromEntries([...searchParams]);
+    if (urlParam?.excludeServiceUser) {
+      return urlParam.excludeServiceUser == "true" ? true : false;
+    } else {
+      return localStorage?.excludeServiceUser == "true" ? true : false;
+    }
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const fetchIdRef = useRef(0);
   const [contentLoader, setContentLoader] = useState(true);
   const [searchFilterParams, setSearchFilterParams] = useState([]);
-  const [searchParams, setSearchParams] = useSearchParams();
   const [defaultSearchFilterParams, setDefaultSearchFilterParams] = useState(
     []
   );
   const [resetPage, setResetpage] = useState({ page: 0 });
+  const [policyDetails, setPolicyDetails] = useState({});
+  const { allServiceDefs } = getServiceDef();
 
   useEffect(() => {
-    if (isEmpty(serviceDefs)) {
-      fetchServiceDefs(), fetchServices();
-
-      if (!isKMSRole) {
-        fetchZones();
-      }
+    if (!isKMSRole) {
+      fetchZones();
     }
 
-    if (!isEmpty(serviceDefs)) {
-      let currentDate = moment(moment()).format("MM/DD/YYYY");
-      let { searchFilterParam, defaultSearchFilterParam, searchParam } =
-        fetchSearchFilterParams("bigData", searchParams, searchFilterOptions);
-
-      if (!has(searchFilterParam, "startDate")) {
-        searchParam["startDate"] = currentDate;
-        searchFilterParam["startDate"] = currentDate;
-        defaultSearchFilterParam.push({
-          category: "startDate",
-          value: currentDate
-        });
-      }
-
-      // Updating the states for search params, search filter, default search filter and localStorage
-      setSearchParams(searchParam);
-      setSearchFilterParams(searchFilterParam);
-      setDefaultSearchFilterParams(defaultSearchFilterParam);
-      localStorage.setItem("bigData", JSON.stringify(searchParam));
-      setContentLoader(false);
-    }
-  }, [serviceDefs]);
-
-  useEffect(() => {
+    let currentDate = moment(moment()).format("MM/DD/YYYY");
     let { searchFilterParam, defaultSearchFilterParam, searchParam } =
       fetchSearchFilterParams("bigData", searchParams, searchFilterOptions);
 
-    // Updating the states for search params, search filter, default search filter and localStorage
-    setSearchParams(searchParam);
     if (
-      JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
+      !has(searchFilterParam, "startDate") &&
+      !has(searchFilterParam, "endDate")
     ) {
-      setSearchFilterParams(searchFilterParam);
+      searchParam["startDate"] = currentDate;
+      searchFilterParam["startDate"] = currentDate;
+      defaultSearchFilterParam.push({
+        category: "startDate",
+        value: currentDate
+      });
     }
+
+    // Add excludeServiceUser if not present in the search param with default state value of checked
+    if (!has(searchParam, "excludeServiceUser")) {
+      searchParam["excludeServiceUser"] = checked;
+    }
+    localStorage.setItem("excludeServiceUser", checked);
+
+    // Updating the states for search params, search filter, default search filter and localStorage
+    setSearchParams(searchParam, { replace: true });
+    setSearchFilterParams(searchFilterParam);
     setDefaultSearchFilterParams(defaultSearchFilterParam);
     localStorage.setItem("bigData", JSON.stringify(searchParam));
-    setContentLoader(false);
-  }, [searchParams]);
+  }, []);
+
+  useEffect(() => {
+    if (servicesAvailable !== null) {
+      let { searchFilterParam, defaultSearchFilterParam, searchParam } =
+        fetchSearchFilterParams("bigData", searchParams, searchFilterOptions);
+
+      // Update excludeServiceUser in the search param and in the localStorage
+      if (searchParam?.excludeServiceUser) {
+        setChecked(searchParam?.excludeServiceUser == "true" ? true : false);
+        localStorage.setItem(
+          "excludeServiceUser",
+          searchParam?.excludeServiceUser
+        );
+      }
+
+      // Updating the states for search params, search filter, default search filter and localStorage
+      setSearchParams(searchParam, { replace: true });
+      if (
+        JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
+      ) {
+        setSearchFilterParams(searchFilterParam);
+      }
+      setDefaultSearchFilterParams(defaultSearchFilterParam);
+      localStorage.setItem("bigData", JSON.stringify(searchParam));
+
+      setContentLoader(false);
+    }
+  }, [searchParams, servicesAvailable]);
 
   const fetchAccessLogsInfo = useCallback(
     async ({ pageSize, pageIndex, sortBy, gotoPage }) => {
       setLoader(true);
-      if (!isEmpty(serviceDefs)) {
+      if (servicesAvailable !== null) {
         let logsResp = [];
         let logs = [];
         let totalCount = 0;
@@ -144,7 +175,15 @@ function Access() {
         if (fetchId === fetchIdRef.current) {
           params["pageSize"] = pageSize;
           params["startIndex"] = pageIndex * pageSize;
-          params["excludeServiceUser"] = checked ? true : false;
+          if (Object.fromEntries([...searchParams])?.excludeServiceUser) {
+            params["excludeServiceUser"] =
+              Object.fromEntries([...searchParams])?.excludeServiceUser ==
+              "true"
+                ? true
+                : false;
+          } else {
+            params["excludeServiceUser"] = checked;
+          }
           if (sortBy.length > 0) {
             params["sortBy"] = getTableSortBy(sortBy);
             params["sortType"] = getTableSortType(sortBy);
@@ -152,7 +191,10 @@ function Access() {
           try {
             logsResp = await fetchApi({
               url: "assets/accessAudit",
-              params: params
+              params: params,
+              paramsSerializer: function (params) {
+                return qs.stringify(params, { arrayFormat: "repeat" });
+              }
             });
             logs = logsResp.data.vXAccessAudits;
             totalCount = logsResp.data.totalCount;
@@ -170,68 +212,67 @@ function Access() {
         }
       }
     },
-    [updateTable, searchFilterParams]
+    [updateTable, checked, searchFilterParams, servicesAvailable]
   );
 
-  const fetchServiceDefs = async () => {
-    let serviceDefsResp = [];
-    try {
-      serviceDefsResp = await fetchApi({
-        url: "plugins/definitions"
-      });
-    } catch (error) {
-      console.error(
-        `Error occurred while fetching Service Definitions or CSRF headers! ${error}`
-      );
-    }
-
-    setServiceDefs(serviceDefsResp.data.serviceDefs);
-    setContentLoader(false);
-  };
-
-  const fetchServices = async () => {
-    let servicesResp = [];
-    try {
-      servicesResp = await fetchApi({
-        url: "plugins/services"
-      });
-    } catch (error) {
-      console.error(
-        `Error occurred while fetching Services or CSRF headers! ${error}`
-      );
-    }
-
-    setServices(servicesResp.data.services);
-    setContentLoader(false);
-  };
-
   const fetchZones = async () => {
-    let zonesResp;
+    let zonesResp = [];
     try {
-      zonesResp = await fetchApi({
-        url: "zones/zones"
+      const response = await fetchApi({
+        url: "public/v2/api/zone-headers"
       });
+
+      zonesResp = response?.data || [];
     } catch (error) {
       console.error(`Error occurred while fetching Zones! ${error}`);
     }
 
-    setZones(sortBy(zonesResp.data.securityZones, ["name"]));
-    setContentLoader(false);
+    setZones(sortBy(zonesResp, ["name"]));
   };
 
-  const toggleChange = () => {
-    let currentParams = Object.fromEntries([...searchParams]);
-    currentParams["excludeServiceUser"] = !checked;
-    localStorage.setItem("excludeServiceUser", JSON.stringify(!checked));
-    setSearchParams(currentParams);
+  const toggleChange = (chkVal) => {
+    let checkBoxValue = chkVal?.target?.checked;
+    let searchParam = {};
+
+    for (const [key, value] of searchParams.entries()) {
+      let searchFilterObj = find(searchFilterOptions, {
+        urlLabel: key
+      });
+
+      if (!isUndefined(searchFilterObj)) {
+        if (searchFilterObj?.addMultiple) {
+          let oldValue = searchParam[key];
+          let newValue = value;
+          if (oldValue) {
+            if (isArray(oldValue)) {
+              searchParam[key].push(newValue);
+            } else {
+              searchParam[key] = [oldValue, newValue];
+            }
+          } else {
+            searchParam[key] = newValue;
+          }
+        } else {
+          searchParam[key] = value;
+        }
+      } else {
+        searchParam[key] = value;
+      }
+    }
+
+    searchParam["excludeServiceUser"] = checkBoxValue;
+    localStorage.setItem("excludeServiceUser", checkBoxValue);
+
+    setSearchParams(searchParam, { replace: true });
     setAccessLogs([]);
-    setChecked(!checked);
+    setChecked(chkVal?.target?.checked);
     setLoader(true);
     setUpdateTable(moment.now());
   };
 
   const handleClosePolicyId = () => setPolicyViewModal(false);
   const handleClose = () => setShowRowModal(false);
+
   const rowModal = (row) => {
     setShowRowModal(true);
     setRowData(row.original);
@@ -244,6 +285,7 @@ function Access() {
       "policyVersion"
     ]);
     setPolicyViewModal(true);
+    setPolicyDetails(policyDetails);
     setPolicyParamsData(policyParams);
     fetchVersions(policyDetails.policyId);
   };
@@ -276,7 +318,7 @@ function Access() {
     setUpdateTable(moment.now());
   };
 
-  const rsrcContent = (requestData) => {
+  const requestDataContent = (requestData) => {
     const copyText = (val) => {
       !isEmpty(val) && toast.success("Copied successfully!!");
       return val;
@@ -290,8 +332,7 @@ function Access() {
           <button
             className="pull-right link-tag query-icon btn btn-sm"
             size="sm"
-            variant="link"
-            title="Copied!"
+            title="Copy"
             onClick={(e) => {
               e.stopPropagation();
               navigator.clipboard.writeText(copyText(requestData));
@@ -329,24 +370,42 @@ function Access() {
     );
   };
 
-  const rsrctitle = (title) => {
-    let filterTitle = "";
-    if (title == ServiceType.Service_HIVE.label) {
-      filterTitle = `Hive Query`;
+  const showQueryPopup = (rowId, aclEnforcer, serviceType, requestData) => {
+    if (!isEmpty(requestData)) {
+      if (
+        aclEnforcer === "ranger-acl" &&
+        ServiceRequestDataRangerAcl.includes(serviceType)
+      ) {
+        return queryPopupContent(rowId, serviceType, requestData);
+      } else if (
+        aclEnforcer === "hadoop-acl" &&
+        ServiceRequestDataHadoopAcl.includes(serviceType)
+      ) {
+        return queryPopupContent(rowId, serviceType, requestData);
+      } else {
+        return "";
+      }
     }
-    if (title == ServiceType.Service_HBASE.label) {
-      filterTitle = `HBase Audit Data`;
-    }
-    if (title == ServiceType.Service_HDFS.label) {
-      filterTitle = `HDFS Operation Name`;
-    }
-    if (title == ServiceType.Service_SOLR.label) {
-      filterTitle = "Solr Query";
-    }
-    return <strong>{filterTitle}</strong>;
   };
 
-  const previousVer = (e) => {
+  const queryPopupContent = (rowId, serviceType, requestData) => {
+    return (
+      <div className="pull-right">
+        <div className="queryInfo btn btn-sm link-tag query-icon">
+          <CustomPopoverOnClick
+            icon="fa-fw fa fa-table"
+            title={requestDataTitle(serviceType)}
+            content={requestDataContent(requestData)}
+            placement="left"
+            trigger={["click", "focus"]}
+            id={rowId}
+          ></CustomPopoverOnClick>
+        </div>
+      </div>
+    );
+  };
+
+  const previousVersion = (e) => {
     if (e.currentTarget.classList.contains("active")) {
       let curr = policyParamsData && policyParamsData.policyVersion;
       let policyVersionList = currentPage;
@@ -362,7 +421,7 @@ function Access() {
     setPolicyParamsData(prevVal);
   };
 
-  const nextVer = (e) => {
+  const nextVersion = (e) => {
     if (e.currentTarget.classList.contains("active")) {
       let curr = policyParamsData && policyParamsData.policyVersion;
       let policyVersionList = currentPage;
@@ -450,10 +509,13 @@ function Access() {
         Header: "Service (Name / Type)",
         accessor: (s) => (
           <div>
-            <div className="text-left" title={s.repoDisplayName}>
+            <div className="text-left lht-2 mb-1" title={s.repoDisplayName}>
               {s.repoDisplayName}
             </div>
-            <div className="bt-1 text-left" title={s.serviceTypeDisplayName}>
+            <div
+              className="bt-1 text-left lht-2 mb-0"
+              title={s.serviceTypeDisplayName}
+            >
               {s.serviceTypeDisplayName}
             </div>
           </div>
@@ -466,96 +528,34 @@ function Access() {
         Header: "Resource (Name / Type)",
         accessor: "resourceType",
         Cell: (r) => {
+          let rowId = r.row.original.id;
           let resourcePath = r.row.original.resourcePath;
           let resourceType = r.row.original.resourceType;
           let serviceType = r.row.original.serviceType;
           let aclEnforcer = r.row.original.aclEnforcer;
           let requestData = r.row.original.requestData;
-          let id = r.row.original.id;
-          if (
-            (serviceType == ServiceType.Service_HIVE.label ||
-              serviceType == ServiceType.Service_HBASE.label ||
-              serviceType == ServiceType.Service_HDFS.label ||
-              serviceType == ServiceType.Service_SOLR.label) &&
-            aclEnforcer === "ranger-acl" &&
-            !isEmpty(requestData)
-          ) {
-            if (!isUndefined(resourcePath) && !isEmpty(requestData)) {
-              return (
-                <>
+
+          if (!isUndefined(resourcePath)) {
+            let resourcePathText = isEmpty(resourcePath) ? "--" : resourcePath;
+            let resourceTypeText = isEmpty(resourceType) ? "--" : resourceType;
+            return (
+              <React.Fragment>
+                <div className="clearfix d-flex flex-nowrap m-0">
                   <div
-                    className="clearfix"
-                    style={{ display: "flex", flexWrap: "nowrap", margin: "0" }}
+                    className="pull-left resource-text lht-2 mb-1"
+                    title={resourcePathText}
                   >
-                    <div
-                      className="pull-left resource-text"
-                      title={resourcePath}
-                    >
-                      {resourcePath}
-                    </div>
-                    <div className="pull-right">
-                      <div className="queryInfo btn btn-sm link-tag query-icon">
-                        <CustomPopoverOnClick
-                          icon="fa-fw fa fa-table"
-                          title={rsrctitle(serviceType)}
-                          content={rsrcContent(requestData)}
-                          placement="left"
-                          trigger={["click", "focus"]}
-                          id={id}
-                        ></CustomPopoverOnClick>
-                      </div>
-                    </div>
+                    {resourcePathText}
                   </div>
-                  <div className="bt-1" title={resourceType}>
-                    {resourceType}
-                  </div>
-                </>
-              );
-            } else {
-              return (
-                <div
-                  className="clearfix"
-                  style={{ display: "flex", flexWrap: "nowrap", margin: "0" }}
-                >
-                  <div className="pull-left resource-text">--</div>
-                  <div className="pull-right">
-                    <div className="queryInfo btn btn-sm link-tag query-icon">
-                      <CustomPopoverOnClick
-                        icon="fa-fw fa fa-table"
-                        title={rsrctitle(serviceType)}
-                        content={rsrcContent(requestData)}
-                        placement="left"
-                        trigger={["click", "focus"]}
-                        id={id}
-                      ></CustomPopoverOnClick>
-                    </div>
-                  </div>
+                  {showQueryPopup(rowId, aclEnforcer, serviceType, requestData)}
                 </div>
-              );
-            }
+                <div className="bt-1 lht-2 mb-0" title={resourceTypeText}>
+                  {resourceTypeText}
+                </div>
+              </React.Fragment>
+            );
           } else {
-            if (!isUndefined(resourcePath)) {
-              return (
-                <>
-                  <div
-                    className="clearfix"
-                    style={{ display: "flex", flexWrap: "nowrap", margin: "0" }}
-                  >
-                    <div
-                      className="pull-left resource-text"
-                      title={resourcePath}
-                    >
-                      {resourcePath}
-                    </div>
-                  </div>
-                  <div className="bt-1" title={resourceType}>
-                    {resourceType}
-                  </div>
-                </>
-              );
-            } else {
-              return <div className="text-center">--</div>;
-            }
+            return <div className="text-center">--</div>;
           }
         },
         minWidth: 180
@@ -575,8 +575,14 @@ function Access() {
         accessor: "action",
         Cell: (rawValue) => {
           return (
-            <h6 >
-              <Badge variant="info" title={rawValue.value} className="text-truncate w-100">{rawValue.value}</Badge>
+            <h6>
+              <Badge
+                variant="info"
+                title={rawValue.value}
+                className="text-truncate mw-100"
+              >
+                {rawValue.value}
+              </Badge>
             </h6>
           );
         },
@@ -652,7 +658,9 @@ function Access() {
           if (!isUndefined(rawValue.value) || !isEmpty(rawValue.value)) {
             return (
               <h6>
-                <Badge bg="dark">{rawValue.value}</Badge>
+                <Badge variant="dark" className="text-truncate mw-100">
+                  {rawValue.value}
+                </Badge>
               </h6>
             );
           } else return <div className="text-center">--</div>;
@@ -675,7 +683,7 @@ function Access() {
         Cell: (rawValue) => {
           let Tags = [];
           if (!isEmpty(rawValue.value)) {
-            Tags = JSON.parse(rawValue.value).map((tag) => {
+            Tags = sortBy(JSON.parse(rawValue.value), "type")?.map((tag) => {
               if (tag.attributes && !isEmpty(tag.attributes)) {
                 return (
                   <CustomPopoverTagOnClick
@@ -694,9 +702,43 @@ function Access() {
           } else {
             return <div className="text-center">--</div>;
           }
-          return <AccessMoreLess Data={sortBy(Tags)} />;
+          return <AccessMoreLess Data={Tags} />;
         },
-        width: 100,
+        width: 140,
+        disableResizing: true,
+        disableSortBy: true,
+        getResizerProps: () => {}
+      },
+      {
+        Header: "Datasets",
+        accessor: "datasets",
+        Cell: (rawValue) => {
+          let Datasets = [];
+          if (!isEmpty(rawValue.value)) {
+            Datasets = JSON.parse(rawValue.value).sort();
+          } else {
+            return <div className="text-center">--</div>;
+          }
+          return <AccessMoreLess Data={Datasets} />;
+        },
+        width: 140,
+        disableResizing: true,
+        disableSortBy: true,
+        getResizerProps: () => {}
+      },
+      {
+        Header: "Projects",
+        accessor: "projects",
+        Cell: (rawValue) => {
+          let Projects = [];
+          if (!isEmpty(rawValue.value)) {
+            Projects = JSON.parse(rawValue.value).sort();
+          } else {
+            return <div className="text-center">--</div>;
+          }
+          return <AccessMoreLess Data={Projects} />;
+        },
+        width: 140,
         disableResizing: true,
         disableSortBy: true,
         getResizerProps: () => {}
@@ -717,7 +759,7 @@ function Access() {
 
   const getServiceDefType = () => {
     let serviceDefType = [];
-    serviceDefType = filter(serviceDefs, function (serviceDef) {
+    serviceDefType = filter(allServiceDefs, function (serviceDef) {
       return serviceDef.name !== "tag";
     });
 
@@ -752,36 +794,20 @@ function Access() {
   };
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
-
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(searchFilterOptions, {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      searchFilterOptions
+    );
 
     searchParam["excludeServiceUser"] = checked;
 
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     localStorage.setItem("bigData", JSON.stringify(searchParam));
-    resetPage.page(0);
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   const searchFilterOptions = [
@@ -813,7 +839,7 @@ function Access() {
       category: "eventId",
       label: "Audit ID",
       urlLabel: "eventId",
-      type: "number"
+      type: "text"
     },
     {
       category: "clientIP",
@@ -837,7 +863,8 @@ function Access() {
       category: "excludeUser",
       label: "Exclude User",
       urlLabel: "excludeUser",
-      type: "number"
+      addMultiple: true,
+      type: "text"
     },
     {
       category: "policyId",
@@ -897,9 +924,22 @@ function Access() {
       type: "text"
     },
     {
+      category: "datasets",
+      label: "Datasets",
+      urlLabel: "datasets",
+      type: "text"
+    },
+    {
+      category: "projects",
+      label: "Projects",
+      urlLabel: "projects",
+      type: "text"
+    },
+    {
       category: "requestUser",
-      label: "Users",
+      label: "User",
       urlLabel: "user",
+      addMultiple: true,
       type: "text"
     },
     {
@@ -923,8 +963,7 @@ function Access() {
                 key="access-log-search-filter"
                 placeholder="Search for your access audits..."
                 options={sortBy(searchFilterOptions, ["label"])}
-                onTokenAdd={updateSearchFilter}
-                onTokenRemove={updateSearchFilter}
+                onChange={updateSearchFilter}
                 defaultSelected={defaultSearchFilterParams}
               />
 
@@ -961,6 +1000,8 @@ function Access() {
                       <br /> <b> Exclude User :</b> Name of User.
                       <br /> <b> Application :</b> Application.
                       <br /> <b> Tags :</b> Tag Name.
+                      <br /> <b> Datasets:</b> Dataset Name.
+                      <br /> <b> Projects:</b> Project Name.
                       <br /> <b> Permission :</b> Permission
                     </p>
                   }
@@ -976,10 +1017,8 @@ function Access() {
             <input
               type="checkbox"
               className="align-middle"
-              defaultChecked={checked}
-              onChange={() => {
-                toggleChange();
-              }}
+              checked={checked}
+              onChange={toggleChange}
               data-id="serviceUsersExclude"
               data-cy="serviceUsersExclude"
             />
@@ -1040,7 +1079,6 @@ function Access() {
           <Modal.Body>
             <PolicyViewDetails
               paramsData={policyParamsData}
-              serviceDefs={serviceDefs}
               policyView={false}
             />
           </Modal.Body>
@@ -1053,7 +1091,8 @@ function Access() {
                     : "fa-fw fa fa-chevron-left"
                 }
                 onClick={(e) =>
-                  e.currentTarget.classList.contains("active") && previousVer(e)
+                  e.currentTarget.classList.contains("active") &&
+                  previousVersion(e)
                 }
               ></i>
               <span>{`Version ${
@@ -1073,7 +1112,7 @@ function Access() {
                     : "fa-fw fa fa-chevron-right"
                 }
                 onClick={(e) =>
-                  e.currentTarget.classList.contains("active") && nextVer(e)
+                  e.currentTarget.classList.contains("active") && nextVersion(e)
                 }
               ></i>
             </div>

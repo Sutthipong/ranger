@@ -33,6 +33,7 @@ import java.util.Set;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
+import org.apache.hadoop.util.Time;
 import org.apache.ranger.biz.ServiceDBStore.REMOVE_REF_TYPE;
 import org.apache.ranger.common.*;
 import org.apache.ranger.common.db.RangerTransactionSynchronizationAdapter;
@@ -43,8 +44,11 @@ import org.apache.ranger.plugin.model.GroupInfo;
 import org.apache.ranger.plugin.model.RangerPolicy;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerDataMaskPolicyItem;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyItem;
+import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyResource;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerRowFilterPolicyItem;
+import org.apache.ranger.plugin.model.RangerPrincipal;
 import org.apache.ranger.plugin.model.UserInfo;
+import org.apache.ranger.plugin.store.EmbeddedServiceDefsUtil;
 import org.apache.ranger.plugin.util.RangerUserStore;
 import org.apache.ranger.service.*;
 import org.apache.ranger.ugsyncutil.model.GroupUserInfo;
@@ -65,7 +69,6 @@ import org.apache.ranger.db.XXResourceDao;
 import org.apache.ranger.db.XXUserDao;
 import org.apache.ranger.db.XXUserPermissionDao;
 import org.apache.ranger.entity.XXAuditMap;
-import org.apache.ranger.entity.XXAuthSession;
 import org.apache.ranger.entity.XXGroup;
 import org.apache.ranger.entity.XXGroupGroup;
 import org.apache.ranger.entity.XXGroupUser;
@@ -98,10 +101,11 @@ import org.apache.ranger.entity.XXPortalUserRole;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import static org.apache.ranger.db.XXGlobalStateDao.RANGER_GLOBAL_STATE_NAME_USER_GROUP;
+
 @Component
 public class XUserMgr extends XUserMgrBase {
 
-	private static final String RANGER_USER_GROUP_GLOBAL_STATE_NAME = "RangerUserStore";
 	private static final String USER = "User";
 	private static final String GROUP = "Group";
 	private static final int MAX_DB_TRANSACTION_RETRIES = 5;
@@ -162,6 +166,9 @@ public class XUserMgr extends XUserMgrBase {
 
 	@Autowired
 	RangerTransactionSynchronizationAdapter transactionSynchronizationAdapter;
+
+	@Autowired
+	GdsDBStore gdsStore;
 
 	@Autowired
 	@Qualifier(value = "transactionManager")
@@ -2010,6 +2017,16 @@ public class XUserMgr extends XUserMgrBase {
 		return listMasked;
 	}
 
+	public List<RangerPrincipal> getRangerPrincipals(SearchCriteria searchCriteria){
+		String searchString = (String) searchCriteria.getParamValue("name");
+		int    startIdx     = searchCriteria.getStartIndex();
+		int    maxRows      = searchCriteria.getMaxRows();
+
+		List<RangerPrincipal> ret = daoManager.getXXUser().lookupPrincipalByName(searchString, startIdx, maxRows);
+
+		return ret;
+	}
+
 	public boolean hasAccessToModule(String moduleName){
 		UserSessionBase userSession = ContextUtil.getCurrentUserSession();
 		if (userSession != null && userSession.getLoginId()!=null){
@@ -2031,6 +2048,10 @@ public class XUserMgr extends XUserMgrBase {
 		xaBizUtil.blockAuditorRoleUser();
 		XXGroupDao xXGroupDao = daoManager.getXXGroup();
 		XXGroup xXGroup = xXGroupDao.getById(id);
+		if (xXGroup == null) {
+			throw restErrorUtil.create404RESTException("Data Not Found for given Id", MessageEnums.DATA_NOT_FOUND, id,
+					null, "readResource : No Object found with given id.");
+		}
 		VXGroup vXGroup = xGroupService.populateViewBean(xXGroup);
 		if (vXGroup == null || StringUtils.isEmpty(vXGroup.getName())) {
 			throw restErrorUtil.createRESTException("Group ID doesn't exist.", MessageEnums.INVALID_INPUT_DATA);
@@ -2134,12 +2155,37 @@ public class XUserMgr extends XUserMgrBase {
 				rangerPolicy.setRowFilterPolicyItems(rowFilterItems);
 
 				try {
-					svcStore.updatePolicy(rangerPolicy);
+					if (StringUtils.equals(rangerPolicy.getServiceType(), EmbeddedServiceDefsUtil.EMBEDDED_SERVICEDEF_GDS_NAME)) {
+						Map<String, RangerPolicyResource> resources = rangerPolicy.getResources();
+
+						if (MapUtils.isEmpty(resources)) {
+							continue;
+						}
+
+						if (resources.containsKey(GdsDBStore.RESOURCE_NAME_DATASET_ID)) {
+							RangerPolicyResource policyRes = resources.get(GdsDBStore.RESOURCE_NAME_DATASET_ID);
+							List<String>         resValues = policyRes != null ? policyRes.getValues() : null;
+
+							if (CollectionUtils.isNotEmpty(resValues)) {
+								gdsStore.updateDatasetPolicy(Long.valueOf(resValues.get(0)), rangerPolicy);
+							}
+						} else if (resources.containsKey(GdsDBStore.RESOURCE_NAME_PROJECT_ID)) {
+							RangerPolicyResource policyRes = resources.get(GdsDBStore.RESOURCE_NAME_PROJECT_ID);
+							List<String>         resValues = policyRes != null ? policyRes.getValues() : null;
+
+							if (CollectionUtils.isNotEmpty(resValues)) {
+								gdsStore.updateProjectPolicy(Long.valueOf(resValues.get(0)), rangerPolicy);
+							}
+						}
+					} else {
+						svcStore.updatePolicy(rangerPolicy);
+					}
 				} catch (Throwable excp) {
 					logger.error("updatePolicy(" + rangerPolicy + ") failed", excp);
 					restErrorUtil.createRESTException(excp.getMessage());
 				}
 			}
+
 			if(CollectionUtils.isNotEmpty(xXGroupPermissions)){
 				for (XXGroupPermission xXGroupPermission : xXGroupPermissions) {
 					if(xXGroupPermission!=null){
@@ -2153,6 +2199,8 @@ public class XUserMgr extends XUserMgrBase {
 			}
 			//delete group from audit filter configs
 			svcStore.updateServiceAuditConfig(vXGroup.getName(), REMOVE_REF_TYPE.GROUP);
+			// delete group from dataset,datashare,project
+			gdsStore.deletePrincipalFromGdsAcl(REMOVE_REF_TYPE.GROUP.toString(), vXGroup.getName());
 			//delete XXGroup
 			xXGroupDao.remove(id);
 			//Create XXTrxLog
@@ -2197,6 +2245,40 @@ public class XUserMgr extends XUserMgrBase {
 		}
 	}
 
+	public long forceDeleteExternalGroups(List<Long> groupIds){
+		long groupsDeleted = 0;
+		long failedDeletes = 0;
+		long startTime = Time.now();
+		for(Long groupId: groupIds){
+			TransactionTemplate txTemplate = new TransactionTemplate(txManager);
+			txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+			try {
+				txTemplate.execute(new TransactionCallback<Object>() {
+					@Override
+					public Object doInTransaction(TransactionStatus status) {
+						deleteXGroup(groupId, true);
+						return null;
+					}
+				});
+				groupsDeleted += 1;
+			} catch (Throwable ex) {
+				logger.error("forceDeleteExternalGroups(): Failed to delete group id: {}", groupId, ex);
+				failedDeletes += 1;
+			}
+		}
+		if (failedDeletes == 1) {
+			logger.error("Failed to delete 1 group");
+		} else if (failedDeletes > 1) {
+			logger.error("Failed to delete {} groups", failedDeletes);
+		}
+		if (groupIds.size() == 1) {
+			logger.info("Force Deletion of 1 group took {} milliseconds", (Time.now() - startTime));
+		} else if (groupIds.size() > 1) {
+			logger.info("Force Deletion of {} groups took {} milliseconds", groupIds.size(), (Time.now() - startTime));
+		}
+		return groupsDeleted;
+	}
+
 	private void blockIfZoneGroup(Long grpId) {
 		List<XXSecurityZoneRefGroup> zoneRefGrpList = daoManager.getXXSecurityZoneRefGroup().findByGroupId(grpId);
 		if (CollectionUtils.isNotEmpty(zoneRefGrpList)) {
@@ -2215,6 +2297,10 @@ public class XUserMgr extends XUserMgrBase {
 		xaBizUtil.blockAuditorRoleUser();
 		XXUserDao xXUserDao = daoManager.getXXUser();
 		XXUser xXUser =	xXUserDao.getById(id);
+		if (xXUser == null) {
+			throw restErrorUtil.create404RESTException("Data Not Found for given Id", MessageEnums.DATA_NOT_FOUND, id,
+					null, "readResource : No Object found with given id.");
+		}
 		VXUser vXUser =	xUserService.populateViewBean(xXUser);
 		if(vXUser==null || StringUtils.isEmpty(vXUser.getName())){
 			throw restErrorUtil.createRESTException("No user found with id=" + id);
@@ -2251,7 +2337,7 @@ public class XUserMgr extends XUserMgrBase {
 		XXAuthSessionDao xXAuthSessionDao=daoManager.getXXAuthSession();
 		XXUserPermissionDao xXUserPermissionDao=daoManager.getXXUserPermission();
 		XXPortalUserRoleDao xXPortalUserRoleDao=daoManager.getXXPortalUserRole();
-		List<XXAuthSession> xXAuthSessions=xXAuthSessionDao.getAuthSessionByUserId(xXPortalUserId);
+		List<Long> xXAuthSessionIds = xXAuthSessionDao.getAuthSessionIdsByUserId(xXPortalUserId);
 		List<XXUserPermission> xXUserPermissions=xXUserPermissionDao.findByUserPermissionId(xXPortalUserId);
 		List<XXPortalUserRole> xXPortalUserRoles=xXPortalUserRoleDao.findByUserId(xXPortalUserId);
 
@@ -2284,12 +2370,11 @@ public class XUserMgr extends XUserMgrBase {
 			//delete XXPortalUser references
 			if(vXPortalUser!=null){
 				xPortalUserService.updateXXPortalUserReferences(xXPortalUserId);
-				if(xXAuthSessions!=null && xXAuthSessions.size()>0){
-					logger.warn("Deleting " + xXAuthSessions.size() + " login session records for user '" +  vXPortalUser.getLoginId() + "'");
+				if(CollectionUtils.isNotEmpty(xXAuthSessionIds)){
+					logger.warn("Deleting " + xXAuthSessionIds.size() + " login session records for user '" +  vXPortalUser.getLoginId() + "'");
+					xXAuthSessionDao.deleteAuthSessionsByIds(xXAuthSessionIds);
 				}
-				for (XXAuthSession xXAuthSession : xXAuthSessions) {
-					xXAuthSessionDao.remove(xXAuthSession.getId());
-				}
+
 				for (XXUserPermission xXUserPermission : xXUserPermissions) {
 					if(xXUserPermission!=null){
 						XXModuleDef xXModuleDef=daoManager.getXXModuleDef().findByModuleId(xXUserPermission.getModuleId());
@@ -2335,14 +2420,41 @@ public class XUserMgr extends XUserMgrBase {
 				rangerPolicy.setRowFilterPolicyItems(rowFilterItems);
 
 				try{
-					svcStore.updatePolicy(rangerPolicy);
-				}catch(Throwable excp) {
+					if (StringUtils.equals(rangerPolicy.getServiceType(), EmbeddedServiceDefsUtil.EMBEDDED_SERVICEDEF_GDS_NAME)) {
+						Map<String, RangerPolicyResource> resources = rangerPolicy.getResources();
+
+						if (MapUtils.isEmpty(resources)) {
+							continue;
+						}
+
+						if (resources.containsKey(GdsDBStore.RESOURCE_NAME_DATASET_ID)) {
+							RangerPolicyResource policyRes = resources.get(GdsDBStore.RESOURCE_NAME_DATASET_ID);
+							List<String>         resValues = policyRes != null ? policyRes.getValues() : null;
+
+							if (CollectionUtils.isNotEmpty(resValues)) {
+								gdsStore.updateDatasetPolicy(Long.valueOf(resValues.get(0)), rangerPolicy);
+							}
+						} else if (resources.containsKey(GdsDBStore.RESOURCE_NAME_PROJECT_ID)) {
+							RangerPolicyResource policyRes = resources.get(GdsDBStore.RESOURCE_NAME_PROJECT_ID);
+							List<String>         resValues = policyRes != null ? policyRes.getValues() : null;
+
+							if (CollectionUtils.isNotEmpty(resValues)) {
+								gdsStore.updateProjectPolicy(Long.valueOf(resValues.get(0)), rangerPolicy);
+							}
+						}
+					} else {
+						svcStore.updatePolicy(rangerPolicy);
+					}
+				} catch(Throwable excp) {
 					logger.error("updatePolicy(" + rangerPolicy + ") failed", excp);
 					throw restErrorUtil.createRESTException(excp.getMessage());
 				}
 			}
+
 			//delete user from audit filter configs
 			svcStore.updateServiceAuditConfig(vXUser.getName(), REMOVE_REF_TYPE.USER);
+			//delete gdsObject mapping of user
+			gdsStore.deletePrincipalFromGdsAcl(REMOVE_REF_TYPE.USER.toString(),vXUser.getName());
 			//delete XXUser entry of user
 			xXUserDao.remove(id);
 			//delete XXPortal entry of user
@@ -2370,7 +2482,7 @@ public class XUserMgr extends XUserMgrBase {
 			if(hasReferences==false && vXAuditMapList!=null && vXAuditMapList.getListSize()>0){
 				hasReferences=true;
 			}
-			if(hasReferences==false && xXAuthSessions!=null && xXAuthSessions.size()>0){
+			if(hasReferences==false && CollectionUtils.isNotEmpty(xXAuthSessionIds)){
 				hasReferences=true;
 			}
 			if(hasReferences==false && xXUserPermissions!=null && xXUserPermissions.size()>0){
@@ -2398,6 +2510,40 @@ public class XUserMgr extends XUserMgrBase {
 				xaBizUtil.createTrxLog(trxLogList);
 			}
 		}
+	}
+
+	public long forceDeleteExternalUsers(List<Long> userIds){
+		long usersDeleted = 0;
+		long failedDeletes = 0;
+		long startTime = Time.now();
+		for(Long userId: userIds){
+			TransactionTemplate txTemplate = new TransactionTemplate(txManager);
+			txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+			try {
+				txTemplate.execute(new TransactionCallback<Object>() {
+					@Override
+					public Object doInTransaction(TransactionStatus status) {
+						deleteXUser(userId, true);
+						return null;
+					}
+				});
+				usersDeleted += 1;
+			} catch (Throwable ex) {
+				logger.error("forceDeleteExternalUsers(): Failed to delete user id: {}", userId, ex);
+				failedDeletes += 1;
+			}
+		}
+		if (failedDeletes == 1){
+			logger.error("Failed to delete 1 user");
+		} else if (failedDeletes > 1) {
+			logger.error("Failed to delete {} users", failedDeletes);
+		}
+		if (userIds.size() == 1) {
+			logger.info("Force Deletion of 1 user took {} milliseconds", (Time.now() - startTime));
+		} else if (userIds.size() > 1) {
+			logger.info("Force Deletion of {} users took {} milliseconds", userIds.size(), (Time.now() - startTime));
+		}
+		return usersDeleted;
 	}
 
 	private void blockIfZoneUser(Long id) {
@@ -2574,7 +2720,7 @@ public class XUserMgr extends XUserMgrBase {
 	}
 
 	public Long getUserStoreVersion() {
-		return daoManager.getXXGlobalState().getAppDataVersion(RANGER_USER_GROUP_GLOBAL_STATE_NAME);
+		return daoManager.getXXGlobalState().getAppDataVersion(RANGER_GLOBAL_STATE_NAME_USER_GROUP);
 	}
 
 	public Set<UserInfo> getUsers() {
@@ -2677,7 +2823,7 @@ public class XUserMgr extends XUserMgrBase {
 					do {
 						noOfRetries++;
 						try {
-							daoManager.getXXGlobalState().onGlobalAppDataChange(RANGER_USER_GROUP_GLOBAL_STATE_NAME);
+							daoManager.getXXGlobalState().onGlobalAppDataChange(RANGER_GLOBAL_STATE_NAME_USER_GROUP);
 							if (logger.isDebugEnabled()) {
 								logger.debug("createOrUpdateXGroups(): Successfully updated x_ranger_global_state table");
 							}
@@ -3171,6 +3317,10 @@ public class XUserMgr extends XUserMgrBase {
 		return vXUserList;
 	}
 
+	public Map<String, Long> getUserCountByRole() {
+		return daoManager.getXXPortalUser().getCountByUserRole();
+	}
+
 	private class ExternalUserCreator implements Runnable {
 		private String userName;
 
@@ -3259,7 +3409,7 @@ public class XUserMgr extends XUserMgrBase {
 
 	private void updateUserStoreVersion(String label) {
 		try {
-			daoManager.getXXGlobalState().onGlobalAppDataChange(RANGER_USER_GROUP_GLOBAL_STATE_NAME);
+			daoManager.getXXGlobalState().onGlobalAppDataChange(RANGER_GLOBAL_STATE_NAME_USER_GROUP);
 		} catch (Exception excp) {
 			logger.error(label + ": userStore version update failed", excp);
 		}

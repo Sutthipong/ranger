@@ -49,26 +49,27 @@ import { toast } from "react-toastify";
 import { fetchApi } from "Utils/fetchAPI";
 import { useQuery } from "../../components/CommonComponents";
 import SearchPolicyTable from "./SearchPolicyTable";
-import {
-  commonBreadcrumb,
-  getBaseUrl,
-  isKeyAdmin,
-  isKMSAuditor
-} from "../../utils/XAUtils";
+import { isAuditor, isKeyAdmin, isKMSAuditor } from "../../utils/XAUtils";
+import CustomBreadcrumb from "../CustomBreadcrumb";
+import moment from "moment-timezone";
+import { getServiceDef } from "../../utils/appState";
 
-function UserAccessLayout(props) {
+function UserAccessLayout() {
   const isKMSRole = isKeyAdmin() || isKMSAuditor();
+  const isAuditRole = isAuditor() || isKMSAuditor();
   const [show, setShow] = useState(true);
   const [contentLoader, setContentLoader] = useState(true);
   const [serviceDefs, setServiceDefs] = useState([]);
   const [filterServiceDefs, setFilterServiceDefs] = useState([]);
   const [serviceDefOpts, setServiceDefOpts] = useState([]);
   const [services, setServices] = useState([]);
+  const [zones, setZones] = useState([]);
   const [zoneNameOpts, setZoneNameOpts] = useState([]);
   const [searchParamsObj, setSearchParamsObj] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = useQuery();
+  const { allServiceDefs } = getServiceDef();
 
   const showMoreLess = () => {
     setShow(!show);
@@ -93,19 +94,8 @@ function UserAccessLayout(props) {
   };
 
   const fetchData = async () => {
-    let serviceDefsResp;
     let servicesResp;
     let resourceServices;
-
-    try {
-      serviceDefsResp = await fetchApi({
-        url: `plugins/definitions`
-      });
-    } catch (error) {
-      console.error(
-        `Error occurred while fetching Service Definitions ! ${error}`
-      );
-    }
 
     try {
       servicesResp = await fetchApi({
@@ -121,10 +111,8 @@ function UserAccessLayout(props) {
       );
     }
 
-    let resourceServiceDefs = filter(
-      serviceDefsResp.data.serviceDefs,
-      (serviceDef) =>
-        isKMSRole ? serviceDef.name == "kms" : serviceDef.name != "kms"
+    let resourceServiceDefs = filter(allServiceDefs, (serviceDef) =>
+      isKMSRole ? serviceDef.name == "kms" : serviceDef.name != "kms"
     );
 
     let filterResourceServiceDefs = resourceServiceDefs;
@@ -139,12 +127,9 @@ function UserAccessLayout(props) {
       });
     }
 
-    let serviceDefsList = map(
-      serviceDefsResp.data.serviceDefs,
-      function (serviceDef) {
-        return { value: serviceDef.name, label: serviceDef.name };
-      }
-    );
+    let serviceDefsList = map(allServiceDefs, function (serviceDef) {
+      return { value: serviceDef.name, label: serviceDef.name };
+    });
 
     setServiceDefs(resourceServiceDefs);
     setServices(resourceServices);
@@ -153,22 +138,21 @@ function UserAccessLayout(props) {
   };
 
   const fetchZones = async () => {
-    let zonesResp;
+    let zonesResp = [];
     try {
-      zonesResp = await fetchApi({
-        url: "zones/zones"
+      const response = await fetchApi({
+        url: "public/v2/api/zone-headers"
       });
+      zonesResp = response?.data || [];
     } catch (error) {
       console.error(`Error occurred while fetching Zones! ${error}`);
     }
 
-    let zonesList = map(
-      sortBy(zonesResp.data.securityZones, ["name"]),
-      function (zone) {
-        return { value: zone.name, label: zone.name };
-      }
-    );
+    let zonesList = map(sortBy(zonesResp, ["name"]), function (zone) {
+      return { value: zone.name, label: zone.name };
+    });
 
+    setZones(zonesResp || []);
     setZoneNameOpts(zonesList);
   };
 
@@ -233,6 +217,8 @@ function UserAccessLayout(props) {
     if (values.zoneName !== undefined && values.zoneName) {
       urlSearchParams = `${urlSearchParams}&zoneName=${values.zoneName.value}`;
       searchFields.zoneName = values.zoneName.value;
+
+      setZoneDetails(values.zoneName.value);
     }
 
     if (values.searchByValue !== undefined && values.searchByValue) {
@@ -248,9 +234,7 @@ function UserAccessLayout(props) {
       }
     }
 
-    navigate(`/reports/userAccess?${urlSearchParams}`, {
-      replace: true
-    });
+    navigate(`/reports/userAccess?${urlSearchParams}`);
 
     setFilterServiceDefs(serviceDefsList);
     setSearchParamsObj(searchFields);
@@ -386,6 +370,7 @@ function UserAccessLayout(props) {
 
     if (searchParams.get("zoneName")) {
       searchFields.zoneName = searchParams.get("zoneName");
+      setZoneDetails(searchParams.get("zoneName"));
     }
 
     if (searchParams.get("user")) {
@@ -411,18 +396,25 @@ function UserAccessLayout(props) {
       if (!has(Object.fromEntries(searchParams), "policyType")) {
         searchParams.set("policyType", "0");
         searchFields.policyType = "0";
-        navigate(`${location.pathname}?${searchParams}`, {
-          replace: true
-        });
+        navigate(`${location.pathname}?${searchParams}`);
         setSearchParamsObj(searchFields);
       }
       if (has(searchFields, "serviceType")) {
         let filterServiceType = searchFields.serviceType.split(",");
         searchParams.set("serviceType", uniq(filterServiceType).join(","));
-        navigate(`${location.pathname}?${searchParams}`, {
-          replace: true
-        });
+        navigate(`${location.pathname}?${searchParams}`);
       }
+    }
+  };
+
+  const setZoneDetails = (zoneName) => {
+    let zoneDetails = {};
+    let zone = find(zones, { name: zoneName });
+
+    if (zone) {
+      zoneDetails["label"] = zoneName;
+      zoneDetails["value"] = zone.id;
+      localStorage.setItem("zoneDetails", JSON.stringify(zoneDetails));
     }
   };
 
@@ -439,12 +431,14 @@ function UserAccessLayout(props) {
     try {
       exportResp = await fetchApi({
         url: exportApiUrl,
-        params: searchParamsObj
+        params: searchParamsObj,
+        responseType: "blob"
       });
 
       if (exportResp.status === 200) {
         downloadFile({
-          apiUrl: exportApiUrl
+          exportType: exportType,
+          apiResponse: exportResp.data
         });
       } else {
         toast.warning("No policies found to export");
@@ -454,11 +448,27 @@ function UserAccessLayout(props) {
     }
   };
 
-  const downloadFile = ({ apiUrl }) => {
-    let downloadUrl = getBaseUrl() + "service" + apiUrl + location.search;
+  const downloadFile = ({ exportType, apiResponse }) => {
+    let fileExtension;
 
+    if (exportType === "downloadExcel") {
+      fileExtension = ".xls";
+    } else if (exportType === "csv") {
+      fileExtension = ".csv";
+    } else {
+      fileExtension = ".json";
+    }
+
+    const fileName =
+      "Ranger_Policies_" +
+      moment(moment()).format("YYYYMMDD_hhmmss") +
+      fileExtension;
+
+    const downloadUrl = window.URL.createObjectURL(apiResponse);
     const link = document.createElement("a");
+
     link.href = downloadUrl;
+    link.download = fileName;
 
     const clickEvt = new MouseEvent("click", {
       view: window,
@@ -488,9 +498,11 @@ function UserAccessLayout(props) {
 
   return (
     <React.Fragment>
-      {commonBreadcrumb(["UserAccessReport"])}
       <div className="clearfix">
-        <h4 className="wrap-header bold">Reports</h4>
+        <div className="header-wraper">
+          <h3 className="wrap-header bold">Reports</h3>
+          <CustomBreadcrumb />
+        </div>
       </div>
       <div className="wrap report-page">
         <Row>
@@ -724,6 +736,7 @@ function UserAccessLayout(props) {
               key="left"
               drop="left"
               size="sm"
+              className="manage-export"
               title="Export all below policies"
             >
               <Dropdown.Toggle
@@ -740,10 +753,14 @@ function UserAccessLayout(props) {
                 <Dropdown.Item onClick={() => exportPolicy("csv")}>
                   CSV file
                 </Dropdown.Item>
-                <Dropdown.Divider />
-                <Dropdown.Item onClick={() => exportPolicy("exportJson")}>
-                  JSON file
-                </Dropdown.Item>
+                {!isAuditRole && (
+                  <React.Fragment>
+                    <Dropdown.Divider />
+                    <Dropdown.Item onClick={() => exportPolicy("exportJson")}>
+                      JSON file
+                    </Dropdown.Item>
+                  </React.Fragment>
+                )}
               </Dropdown.Menu>
             </Dropdown>
           </Col>

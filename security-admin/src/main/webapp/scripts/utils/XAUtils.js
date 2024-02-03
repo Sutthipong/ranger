@@ -213,7 +213,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-exclamation-circle',
 			title: '<strong>Info!</strong>',
-			message: text
+			message: _.escape(text)
 		});
 	};
 
@@ -231,7 +231,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-exclamation-triangle',
 			title: '<strong>Error!</strong>',
-			message: text
+			message: _.escape(text)
 		},{
 			type: 'danger',
 		});
@@ -251,7 +251,7 @@ define(function(require) {
 		$.notify({
 			icon: 'fa-fw fa fa-check-circle',
 			title: '<strong>Success!</strong>',
-			message: text
+			message: _.escape(text)
 		},{
 			type: 'success'
 		});
@@ -497,7 +497,7 @@ define(function(require) {
 		} else
 			return '--';
 	};
-        XAUtils.showGroupsOrUsersForPolicy = function(rawValue, model, showType, rangerServiceDefModel) {
+        XAUtils.showGroupsOrUsersForPolicy = function(model, showType, rangerServiceDefModel) {
 		var showMoreLess = false, groupArr = [], items = [];
 		var itemList = ['policyItems','allowExceptions','denyPolicyItems','denyExceptions','dataMaskPolicyItems','rowFilterPolicyItems']
 		if(!_.isUndefined(rangerServiceDefModel)){
@@ -627,6 +627,12 @@ define(function(require) {
 				}, 4000);
 			} else {
 				window.location = 'login.jsp?sessionTimeout=true';
+			}
+		}else if(error.status == 400 && error.responseJSON && error.responseJSON.messageList && error.responseJSON.messageList[0].name) {
+			if(error.responseJSON.messageList[0].name == "DATA_NOT_FOUND" || error.responseJSON.messageList[0].name == "INVALID_INPUT_DATA"){
+				App.rContent.show(new vError({
+					status : error.status
+				}));
 			}
 		}
 	};
@@ -1667,6 +1673,7 @@ define(function(require) {
         return {
             closeOnSelect : true,
             placeholder   : placeholder,
+            separator : "@-undefined-@",
             tags : true,
             width : width,
             initSelection: function(element, callback) {
@@ -1719,8 +1726,14 @@ define(function(require) {
                         //remove selected values
                         if(that.collection && that.collection.models){
                             _.filter(that.collection.models, function(model){
-                                if(model && !_.isUndefined(model.get('name'))){
-                                    selectedVals.push(model.get('name'));
+                                if(auditFilter !== "auditFilter"){
+                                    if(model && !_.isUndefined(model.get('name'))){
+                                        selectedVals.push(model.get('name'));
+                                    }
+                                } else {
+                                    if(model && !_.isUndefined(model.get($select))){
+                                        selectedVals = model.get($select);
+                                    }
                                 }
                             })
                         }

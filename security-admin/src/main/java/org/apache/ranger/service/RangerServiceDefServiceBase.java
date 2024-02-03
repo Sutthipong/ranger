@@ -31,6 +31,7 @@ import org.apache.ranger.common.AppConstants;
 import org.apache.ranger.common.GUIDUtil;
 import org.apache.ranger.common.JSONUtil;
 import org.apache.ranger.common.MessageEnums;
+import org.apache.ranger.common.PropertiesUtil;
 import org.apache.ranger.common.SearchField;
 import org.apache.ranger.common.SortField;
 import org.apache.ranger.common.SearchField.DATA_TYPE;
@@ -38,6 +39,7 @@ import org.apache.ranger.common.SearchField.SEARCH_TYPE;
 import org.apache.ranger.entity.*;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerAccessTypeDef;
+import org.apache.ranger.plugin.model.RangerServiceDef.RangerAccessTypeDef.AccessTypeCategory;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerContextEnricherDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerDataMaskDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerDataMaskTypeDef;
@@ -54,12 +56,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import static org.apache.ranger.plugin.util.ServiceDefUtil.IMPLICIT_CONDITION_EXPRESSION_EVALUATOR;
+
 public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V extends RangerServiceDef>
 		extends RangerBaseModelService<T, V> {
 	private static final Logger LOG = LoggerFactory.getLogger(RangerServiceDefServiceBase.class);
 
 	private static final String OPTION_RESOURCE_ACCESS_TYPE_RESTRICTIONS = "__accessTypeRestrictions";
 	private static final String OPTION_RESOURCE_IS_VALID_LEAF            = "__isValidLeaf";
+	public static final String PROP_ENABLE_IMPLICIT_CONDITION_EXPRESSION = "ranger.servicedef.enableImplicitConditionExpression";
 
 	@Autowired
 	RangerAuditFields<?> rangerAuditFields;
@@ -120,6 +125,8 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 			}
 			serviceDef.setAccessTypes(accessTypes);
 		}
+
+		serviceDef.setMarkerAccessTypes(ServiceDefUtil.getMarkerAccessTypes(serviceDef.getAccessTypes()));
 
 		List<XXPolicyConditionDef> xPolicyConditions = daoMgr.getXXPolicyConditionDef()
 				.findByServiceDefId(serviceDefId);
@@ -200,6 +207,8 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 		}
 		serviceDef.setDataMaskDef(dataMaskDef);
 		serviceDef.setRowFilterDef(rowFilterDef);
+
+		addImplicitConditionExpressionIfNeeded(serviceDef);
 
 		ServiceDefUtil.normalize(serviceDef);
 
@@ -402,6 +411,11 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 		xObj.setLabel(vObj.getLabel());
 		xObj.setRbkeylabel(vObj.getRbKeyLabel());
 		xObj.setOrder(AppConstants.DEFAULT_SORT_ORDER);
+
+		if (vObj.getCategory() != null) {
+			xObj.setCategory((short) vObj.getCategory().ordinal());
+		}
+
 		return xObj;
 	}
 	
@@ -423,6 +437,10 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 		vObj.setLabel(xObj.getLabel());
 		vObj.setRbKeyLabel(xObj.getRbkeylabel());
 		vObj.setImpliedGrants(impliedGrants);
+
+		if (xObj.getCategory() != null) {
+			vObj.setCategory(toAccessTypeCategory(xObj.getCategory()));
+		}
 
 		return vObj;
 	}
@@ -606,7 +624,9 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 		List<T> permittedServiceDefs = new ArrayList<T>();
 		for (T xSvcDef : xSvcDefList) {
 			if ((bizUtil.hasAccess(xSvcDef, null) || (bizUtil.isAdmin() && isAuditPage)) || ("true".equals(denyCondition))) {
-				permittedServiceDefs.add(xSvcDef);
+				if (!bizUtil.isGdsServiceDef(xSvcDef)) {
+					permittedServiceDefs.add(xSvcDef);
+				}
 			}
 		}
 		if (!permittedServiceDefs.isEmpty()) {
@@ -707,4 +727,57 @@ public abstract class RangerServiceDefServiceBase<T extends XXServiceDefBase, V 
 		return ret;
 	}
 
+
+	boolean addImplicitConditionExpressionIfNeeded(RangerServiceDef serviceDef) {
+		boolean ret                      = false;
+		boolean implicitConditionDefault = PropertiesUtil.getBooleanProperty(PROP_ENABLE_IMPLICIT_CONDITION_EXPRESSION, true);
+		boolean implicitConditionEnabled = ServiceDefUtil.getBooleanValue(serviceDef.getOptions(), RangerServiceDef.OPTION_ENABLE_IMPLICIT_CONDITION_EXPRESSION, implicitConditionDefault);
+
+		if (implicitConditionEnabled) {
+			boolean                        exists        = false;
+			List<RangerPolicyConditionDef> conditionDefs = serviceDef.getPolicyConditions();
+
+			if (conditionDefs == null) {
+				conditionDefs = new ArrayList<>();
+			}
+
+			for (RangerPolicyConditionDef conditionDef : conditionDefs) {
+				if (StringUtils.equalsIgnoreCase(conditionDef.getEvaluator(), IMPLICIT_CONDITION_EXPRESSION_EVALUATOR)) {
+					exists = true;
+
+					break;
+				}
+			}
+
+			if (!exists) {
+				long maxItemId = ServiceDefUtil.getConditionsMaxItemId(conditionDefs);
+
+				conditionDefs.add(ServiceDefUtil.createImplicitExpressionConditionDef(maxItemId + 1));
+
+				serviceDef.setPolicyConditions(conditionDefs);
+
+				ret = true;
+			}
+		}
+
+		if (LOG.isDebugEnabled()) {
+			LOG.debug("addImplicitConditionExpressionIfNeeded(serviceType={}): implicitConditionDefault={}, implicitConditionEnabled={}, conditionDefs={}, ret={}", serviceDef.getName(), implicitConditionDefault, implicitConditionEnabled, serviceDef.getPolicyConditions(), ret);
+		}
+
+		return ret;
+	}
+
+	private AccessTypeCategory toAccessTypeCategory(short val) {
+		AccessTypeCategory ret = null;
+
+		for (AccessTypeCategory category : AccessTypeCategory.values()) {
+			if (category.ordinal() == val) {
+				ret = category;
+
+				break;
+			}
+		}
+
+		return ret;
+	}
 }

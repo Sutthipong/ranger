@@ -33,6 +33,7 @@ import { fetchApi } from "Utils/fetchAPI";
 import usePrompt from "Hooks/usePrompt";
 import { RegexValidation } from "../../../utils/XAEnums";
 import { BlockUi } from "../../../components/CommonComponents";
+import CustomBreadcrumb from "../../CustomBreadcrumb";
 
 const initialState = {
   loader: true,
@@ -164,7 +165,7 @@ function RoleForm() {
     }
     dispatch({
       type: "SET_ROLE_DATA",
-      roleInfo: roleRespData.data,
+      roleInfo: roleRespData?.data,
       loader: false
     });
   };
@@ -181,9 +182,9 @@ function RoleForm() {
       !isEmpty(selectedRole)
     ) {
       toast.dismiss(toastId.current);
-      return  toastId.current = toast.warning(
+      return (toastId.current = toast.warning(
         `Please add selected user/group/roles to there respective table else user/group/roles will not be added.`
-      );
+      ));
     }
 
     dispatch({
@@ -230,7 +231,7 @@ function RoleForm() {
         let tblpageData = {};
         if (state && state != null) {
           tblpageData = state.tblpageData;
-          if (state.tblpageData.pageRecords %  state.tblpageData.pageSize == 0) {
+          if (state.tblpageData.pageRecords % state.tblpageData.pageSize == 0) {
             tblpageData["totalPage"] = state.tblpageData.totalPage + 1;
           } else {
             if (tblpageData !== undefined) {
@@ -287,7 +288,7 @@ function RoleForm() {
   const handleUserAdd = (push) => {
     if (selectedUser.length == 0) {
       toast.dismiss(toastId.current);
-      toastId.current =  toast.warning("Please select atleast one user!!");;
+      toastId.current = toast.warning("Please select atleast one user!!");
     } else {
       let usr = selectedUser.map(({ value }) => ({
         name: value,
@@ -307,7 +308,7 @@ function RoleForm() {
   const handleGroupAdd = (push) => {
     if (selectedGroup.length == 0) {
       toast.dismiss(toastId.current);
-      toastId.current =  toast.warning("Please select atleast one group!!");
+      toastId.current = toast.warning("Please select atleast one group!!");
     } else {
       let grp = selectedGroup.map(({ value }) => ({
         name: value,
@@ -347,7 +348,7 @@ function RoleForm() {
   const handleRoleAdd = (push) => {
     if (selectedRole.length == 0) {
       toast.dismiss(toastId.current);
-      toastId.current =  toast.warning("Please select atleast one role!!");
+      toastId.current = toast.warning("Please select atleast one role!!");
     } else {
       let rol = selectedRole.map(({ value }) => ({
         name: value,
@@ -426,11 +427,14 @@ function RoleForm() {
 
   return (
     <>
-      {commonBreadcrumb(
-        ["Roles", params.roleID ? "RoleEdit" : "RoleCreate"],
-        params.roleID
-      )}
-      <h4 className="wrap-header bold">Role Detail</h4>
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">Role Detail</h3>
+        {commonBreadcrumb(
+          ["Roles", params.roleID ? "RoleEdit" : "RoleCreate"],
+          params.roleID
+        )}
+      </div>
+
       {loader ? (
         <Loader />
       ) : (
@@ -665,7 +669,7 @@ function RoleForm() {
                                 </tr>
                               ) : (
                                 fields.map((name, index) => (
-                                  <tr>
+                                  <tr key={index}>
                                     <td className="text-center more-less-width text-truncate">
                                       <span title={fields.value[index].name}>
                                         {fields.value[index].name}
@@ -733,7 +737,7 @@ function RoleForm() {
                             data-name="groupsAddBtn"
                             data-cy="groupsAddBtn"
                           >
-                            Add Group
+                            Add Groups
                           </Button>
                         </div>
                       </div>
@@ -771,7 +775,7 @@ function RoleForm() {
                                 </tr>
                               ) : (
                                 fields.map((name, index) => (
-                                  <tr>
+                                  <tr key={index}>
                                     <td className="text-center more-less-width text-truncate">
                                       <span title={fields.value[index].name}>
                                         {fields.value[index].name}
@@ -840,7 +844,7 @@ function RoleForm() {
                             data-cy="rolesAddBtn"
                             s
                           >
-                            Add Role
+                            Add Roles
                           </Button>
                         </div>
                       </div>
@@ -864,7 +868,7 @@ function RoleForm() {
                               `input[id=${Object.keys(errors)[0]}]`
                             ) ||
                             document.querySelector(
-                              `span[class="invalid-field"]`
+                              `span[className="invalid-field"]`
                             );
                           scrollToError(selector);
                         }

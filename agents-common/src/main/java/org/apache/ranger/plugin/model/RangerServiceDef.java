@@ -27,10 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.xml.bind.annotation.XmlAccessType;
-import javax.xml.bind.annotation.XmlAccessorType;
-import javax.xml.bind.annotation.XmlRootElement;
-
 import org.apache.ranger.authorization.utils.StringUtil;
 import org.codehaus.jackson.annotate.JsonAutoDetect;
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
@@ -41,8 +37,6 @@ import org.codehaus.jackson.map.annotate.JsonSerialize;
 @JsonAutoDetect(fieldVisibility=Visibility.ANY)
 @JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown=true)
-@XmlRootElement
-@XmlAccessorType(XmlAccessType.FIELD)
 public class RangerServiceDef extends RangerBaseModelObject implements java.io.Serializable {
 	private static final long serialVersionUID = 1L;
 
@@ -65,6 +59,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	private List<RangerEnumDef>            enums;
 	private RangerDataMaskDef              dataMaskDef;
 	private RangerRowFilterDef             rowFilterDef;
+	private List<RangerAccessTypeDef>      markerAccessTypes; // read-only
 
 	public RangerServiceDef() {
 		this(null, null, null, null, null, null, null, null, null, null, null, null, null);
@@ -104,6 +99,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 		setEnums(enums);
 		setDataMaskDef(dataMaskDef);
 		setRowFilterDef(rowFilterDef);
+		setMarkerAccessTypes(null);
 	}
 
 	public RangerServiceDef(String name, String displayName, String implClass, String label, String description,
@@ -137,6 +133,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 		setEnums(other.getEnums());
 		setDataMaskDef(other.getDataMaskDef());
 		setRowFilterDef(other.getRowFilterDef());
+		setMarkerAccessTypes(other.getMarkerAccessTypes());
 	}
 
 	/**
@@ -421,6 +418,26 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 		this.rowFilterDef = rowFilterDef == null ? new RangerRowFilterDef() : rowFilterDef;
 	}
 
+	public List<RangerAccessTypeDef> getMarkerAccessTypes() {
+		return markerAccessTypes;
+	}
+
+	public void setMarkerAccessTypes(List<RangerAccessTypeDef> markerAccessTypes) {
+		if (this.markerAccessTypes == null) {
+			this.markerAccessTypes = new ArrayList<>();
+		}
+
+		if (this.markerAccessTypes == markerAccessTypes) {
+			return;
+		}
+
+		this.markerAccessTypes.clear();
+
+		if(markerAccessTypes != null) {
+			this.markerAccessTypes.addAll(markerAccessTypes);
+		}
+	}
+
 	public String getDisplayName() {
 		return displayName;
 	}
@@ -480,6 +497,12 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 
 		if (rowFilterDef != null) {
 			rowFilterDef.dedupStrings(strTbl);
+		}
+
+		if (markerAccessTypes != null) {
+			for (RangerAccessTypeDef accessType : markerAccessTypes) {
+				accessType.dedupStrings(strTbl);
+			}
 		}
 	}
 
@@ -585,6 +608,16 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 		}
 		sb.append("} ");
 
+		sb.append("markerAccessTypes={");
+		if(markerAccessTypes != null) {
+			for(RangerAccessTypeDef accessType : markerAccessTypes) {
+				if(accessType != null) {
+					accessType.toString(sb);
+				}
+			}
+		}
+		sb.append("} ");
+
 		sb.append("}");
 
 		return sb;
@@ -594,8 +627,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerEnumDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -770,8 +801,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerEnumElementDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 		
@@ -925,8 +954,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerServiceConfigDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -1328,8 +1355,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerResourceDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -1920,27 +1945,37 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerAccessTypeDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
+
+		public enum AccessTypeCategory { CREATE, READ, UPDATE, DELETE, MANAGE }
 
 		private Long               itemId;
 		private String             name;
 		private String             label;
 		private String             rbKeyLabel;
 		private Collection<String> impliedGrants;
+		private AccessTypeCategory category;
 
 		public RangerAccessTypeDef() {
-			this(null, null, null, null, null);
+			this(null, null, null, null, null, null);
+		}
+
+		public RangerAccessTypeDef(String name) {
+			this(null, name, name, null, null, null);
 		}
 
 		public RangerAccessTypeDef(Long itemId, String name, String label, String rbKeyLabel, Collection<String> impliedGrants) {
+			this(itemId, name, label, rbKeyLabel, impliedGrants, null);
+		}
+
+		public RangerAccessTypeDef(Long itemId, String name, String label, String rbKeyLabel, Collection<String> impliedGrants, AccessTypeCategory category) {
 			setItemId(itemId);
 			setName(name);
 			setLabel(label);
 			setRbKeyLabel(rbKeyLabel);
 			setImpliedGrants(impliedGrants);
+			setCategory(category);
 		}
 
 		public RangerAccessTypeDef(RangerAccessTypeDef other) {
@@ -1949,6 +1984,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 			setLabel(other.getLabel());
 			setRbKeyLabel(other.getRbKeyLabel());
 			setImpliedGrants(other.getImpliedGrants());
+			setCategory((other.getCategory()));
 		}
 
 		/**
@@ -2033,6 +2069,14 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 			}
 		}
 
+		public AccessTypeCategory getCategory() {
+			return category;
+		}
+
+		public void setCategory(AccessTypeCategory category) {
+			this.category = category;
+		}
+
 		public void dedupStrings(Map<String, String> strTbl) {
 			name          = StringUtil.dedupString(name, strTbl);
 			label         = StringUtil.dedupString(label, strTbl);
@@ -2065,6 +2109,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 				}
 			}
 			sb.append("} ");
+			sb.append("category={").append(category).append("} ");
 
 			sb.append("}");
 
@@ -2129,8 +2174,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerPolicyConditionDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -2498,8 +2541,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerContextEnricherDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -2655,8 +2696,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerDataMaskDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -2852,8 +2891,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerDataMaskTypeDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 
@@ -3113,8 +3150,6 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 	@JsonAutoDetect(fieldVisibility=Visibility.ANY)
 	@JsonSerialize(include=JsonSerialize.Inclusion.NON_EMPTY)
 	@JsonIgnoreProperties(ignoreUnknown=true)
-	@XmlRootElement
-	@XmlAccessorType(XmlAccessType.FIELD)
 	public static class RangerRowFilterDef implements java.io.Serializable {
 		private static final long serialVersionUID = 1L;
 

@@ -109,8 +109,8 @@ function GroupForm(props) {
     }
     dispatch({
       type: "SET_GROUP_DATA",
-      groupInfo: groupRespData.data,
-      groupType: groupRespData.data.groupType,
+      groupInfo: groupRespData?.data,
+      groupType: groupRespData?.data?.groupType,
       loader: false
     });
   };
@@ -231,11 +231,13 @@ function GroupForm(props) {
 
   return (
     <div>
-      {commonBreadcrumb(
-        ["Groups", params.groupID ? "GroupEdit" : "GroupCreate"],
-        params.groupID
-      )}
-      <h4 className="wrap-header bold">Group Detail</h4>
+      <div className="header-wraper">
+        <h3 className="wrap-header bold">Group Detail</h3>
+        {commonBreadcrumb(
+          ["Groups", params.groupID ? "GroupEdit" : "GroupCreate"],
+          params.groupID
+        )}
+      </div>
       {loader ? (
         <Loader />
       ) : (
@@ -377,7 +379,7 @@ function GroupForm(props) {
                               `input[id=${Object.keys(errors)[0]}]`
                             ) ||
                             document.querySelector(
-                              `span[class="invalid-field"]`
+                              `span[className="invalid-field"]`
                             );
                           scrollToError(selector);
                         }

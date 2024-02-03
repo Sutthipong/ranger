@@ -44,10 +44,12 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.utils.Time;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import kafka.server.KafkaConfig;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import scala.Some;
 
 /**
@@ -76,7 +78,7 @@ public class KafkaRangerAuthorizerTest {
     private static String truststorePath;
     private static Path tempDir;
     
-    @org.junit.BeforeClass
+    @BeforeAll
     public static void setup() throws Exception {
     	// Create keys
         String serviceDN = "CN=localhost,O=Apache,L=Dublin,ST=Leinster,C=IE";
@@ -100,18 +102,23 @@ public class KafkaRangerAuthorizerTest {
     	truststorePath = truststoreFile.getPath();
     			
         zkServer = new TestingServer();
+		zkServer.start() ;
         
         // Get a random port
-        ServerSocket serverSocket = new ServerSocket(0);
-        port = serverSocket.getLocalPort();
-        serverSocket.close();
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+			Assertions.assertNotNull(serverSocket) ;
+			port = serverSocket.getLocalPort() ;
+			Assertions.assertTrue(port > 0) ;
+		} catch (java.io.IOException e) {
+			throw new RuntimeException("Local socket port not available", e) ;
+		}
 
         tempDir = Files.createTempDirectory("kafka");
 
         final Properties props = new Properties();
-        props.put("broker.id", 1);
+        props.put("broker.id", String.valueOf(1));
         props.put("host.name", "localhost");
-        props.put("port", port);
+        props.put("port", String.valueOf(port));
         props.put("log.dir", tempDir.toString());
         props.put("zookeeper.connect", zkServer.getConnectString());
         props.put("replica.socket.timeout.ms", "1500");
@@ -152,7 +159,7 @@ public class KafkaRangerAuthorizerTest {
         KafkaTestUtils.createSomeTopics(adminProps);
     }
     
-    @org.junit.AfterClass
+    @AfterAll
     public static void cleanup() throws Exception {
         if (kafkaServer != null) {
             kafkaServer.shutdown();
@@ -233,8 +240,8 @@ public class KafkaRangerAuthorizerTest {
                 Thread.sleep(1000);
             }
 
-            Assert.assertNotNull(record);
-            Assert.assertEquals("somevalue", record.value());
+            Assertions.assertNotNull(record);
+            Assertions.assertEquals("somevalue", record.value());
         }
     }
     
@@ -292,7 +299,7 @@ public class KafkaRangerAuthorizerTest {
                 producer.flush();
                 record.get();
             } catch (Exception ex) {
-                Assert.assertTrue(ex.getMessage().contains("Not authorized to access topics"));
+                Assertions.assertTrue(ex.getMessage().contains("Not authorized to access topics"));
             }
         }
     }
@@ -352,8 +359,8 @@ public class KafkaRangerAuthorizerTest {
                 Thread.sleep(1000);
             }
 
-            Assert.assertNotNull(record);
-            Assert.assertEquals("somevalue", record.value());
+            Assertions.assertNotNull(record);
+            Assertions.assertEquals("somevalue", record.value());
         }
     }
 

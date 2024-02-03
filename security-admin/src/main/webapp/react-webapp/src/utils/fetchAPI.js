@@ -17,8 +17,6 @@
  * under the License.
  */
 import axios from "axios";
-import history from "./history";
-import ErrorPage from "../views/ErrorPage";
 import {
   RANGER_REST_CSRF_ENABLED,
   RANGER_REST_CSRF_CUSTOM_HEADER,
@@ -26,6 +24,7 @@ import {
   CSRFToken
 } from "./appConstants";
 import { toast } from "react-toastify";
+import { navigateTo } from "./XAUtils";
 
 let csrfEnabled = false;
 let restCsrfCustomHeader = null;
@@ -55,6 +54,7 @@ async function fetchApi(axiosConfig = {}, otherConf = {}) {
   const config = {
     ...axiosConfig
   };
+
   if (otherConf && otherConf.cancelRequest) {
     /*
       Below code add "source" attribute in second argument which is use to cancel request.
@@ -77,6 +77,7 @@ async function fetchApi(axiosConfig = {}, otherConf = {}) {
     config.cancelToken = source.token;
     otherConf.source = source;
   }
+
   try {
     const resp = await axios(config);
     return resp;
@@ -87,6 +88,22 @@ async function fetchApi(axiosConfig = {}, otherConf = {}) {
         isSessionActive = false;
         window.location.replace("login.jsp?sessionTimeout=true");
       }
+    }
+    if (config?.skipNavigate) {
+      throw error;
+    }
+    if (
+      error?.response?.status === 400 &&
+      (error?.response?.data?.messageList?.[0]?.name == "DATA_NOT_FOUND" ||
+        error?.response?.data?.messageList?.[0]?.name == "INVALID_INPUT_DATA")
+    ) {
+      navigateTo.navigate("/dataNotFound");
+    }
+    if (error?.response?.status === 404) {
+      navigateTo.navigate("/pageNotFound");
+    }
+    if (error?.response?.status === 403) {
+      navigateTo.navigate("/forbidden");
     }
     throw error;
   }

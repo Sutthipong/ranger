@@ -144,6 +144,8 @@ call dbo.removeForeignKeysAndTable('x_security_zone_ref_group')
 GO
 call dbo.removeForeignKeysAndTable('x_security_zone_ref_user')
 GO
+call dbo.removeForeignKeysAndTable('x_security_zone_ref_role')
+GO
 call dbo.removeForeignKeysAndTable('x_security_zone_ref_tag_srvc')
 GO
 call dbo.removeForeignKeysAndTable('x_security_zone_ref_service')
@@ -523,6 +525,7 @@ create table dbo.x_service (
 	tag_service bigint DEFAULT NULL NULL,
 	tag_version bigint DEFAULT 0 NOT NULL,
 	tag_update_time datetime DEFAULT NULL NULL,
+	gds_service bigint DEFAULT NULL NULL,
 	CONSTRAINT x_service_def_PK_id PRIMARY KEY CLUSTERED(id),
 	CONSTRAINT x_service_UK_name UNIQUE NONCLUSTERED (name)
 )
@@ -1019,6 +1022,8 @@ CREATE TABLE dbo.x_service_version_info(
 	tag_update_time datetime DEFAULT NULL NULL,
 	role_version bigint NOT NULL DEFAULT 0,
 	role_update_time datetime DEFAULT NULL NULL,
+	gds_version bigint NOT NULL DEFAULT 0,
+	gds_update_time datetime DEFAULT NULL NULL,
 	version bigint NOT NULL DEFAULT 1,
 	CONSTRAINT x_service_version_info_PK_id PRIMARY KEY CLUSTERED(id)
 )
@@ -1222,6 +1227,18 @@ CREATE TABLE dbo.x_security_zone_ref_group(
         group_name varchar(767) DEFAULT NULL NULL,
         group_type tinyint DEFAULT NULL,
         CONSTRAINT x_sz_ref_agroup_PK_id PRIMARY KEY CLUSTERED(id)
+)
+GO
+CREATE TABLE dbo.x_security_zone_ref_role(
+        id bigint IDENTITY NOT NULL,
+        create_time datetime DEFAULT NULL NULL,
+        update_time datetime DEFAULT NULL NULL,
+        added_by_id bigint DEFAULT NULL NULL,
+        upd_by_id bigint DEFAULT NULL NULL,
+        zone_id bigint DEFAULT NULL NULL,
+        role_id bigint DEFAULT NULL NULL,
+        role_name varchar(767) DEFAULT NULL NULL
+        CONSTRAINT x_sz_ref_arole_PK_id PRIMARY KEY CLUSTERED(id)
 )
 GO
 CREATE TABLE dbo.x_policy_change_log(
@@ -1569,6 +1586,8 @@ ALTER TABLE dbo.x_tag_resource_map ADD CONSTRAINT x_tag_res_map_FK_upd_by_id FOR
 GO
 ALTER TABLE dbo.x_service ADD CONSTRAINT x_service_FK_tag_service FOREIGN KEY(tag_service) REFERENCES dbo.x_service (id)
 GO
+ALTER TABLE dbo.x_service ADD CONSTRAINT x_service_FK_gds_service FOREIGN KEY(gds_service) REFERENCES dbo.x_service (id)
+GO
 ALTER TABLE dbo.x_datamask_type_def ADD CONSTRAINT x_datamask_type_def_FK_def_id FOREIGN KEY(def_id) REFERENCES dbo.x_service_def (id)
 GO
 ALTER TABLE dbo.x_datamask_type_def ADD CONSTRAINT x_datamask_type_def_FK_added_by_id FOREIGN KEY(added_by_id) REFERENCES dbo.x_portal_user (id)
@@ -1708,6 +1727,14 @@ GO
 ALTER TABLE dbo.x_security_zone_ref_group ADD CONSTRAINT x_sz_ref_grp_FK_zone_id FOREIGN KEY(zone_id) REFERENCES dbo.x_security_zone (id)
 GO
 ALTER TABLE dbo.x_security_zone_ref_group ADD CONSTRAINT x_sz_ref_grp_FK_group_id FOREIGN KEY(group_id) REFERENCES dbo.x_group (id)
+GO
+ALTER TABLE dbo.x_security_zone_ref_role ADD CONSTRAINT x_sz_ref_role_FK_added_by_id FOREIGN KEY(added_by_id) REFERENCES dbo.x_portal_user (id)
+GO
+ALTER TABLE dbo.x_security_zone_ref_role ADD CONSTRAINT x_sz_ref_role_FK_upd_by_id FOREIGN KEY(upd_by_id) REFERENCES dbo.x_portal_user (id)
+GO
+ALTER TABLE dbo.x_security_zone_ref_role ADD CONSTRAINT x_sz_ref_role_FK_zone_id FOREIGN KEY(zone_id) REFERENCES dbo.x_security_zone (id)
+GO
+ALTER TABLE dbo.x_security_zone_ref_role ADD CONSTRAINT x_sz_ref_role_FK_role_id FOREIGN KEY(role_id) REFERENCES dbo.x_role (id)
 GO
 
 ALTER TABLE dbo.x_role_ref_role ADD CONSTRAINT x_role_ref_role_FK_added_by_id FOREIGN KEY (added_by_id) REFERENCES dbo.x_portal_user (id)
@@ -2269,6 +2296,8 @@ INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active
 GO
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('065',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 GO
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('066',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+GO
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('DB_PATCHES',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 GO
 INSERT INTO x_user_module_perm (user_id,module_id,create_time,update_time,added_by_id,upd_by_id,is_allowed) VALUES (dbo.getXportalUIdByLoginId('admin'),dbo.getModulesIdByName('Reports'),CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,dbo.getXportalUIdByLoginId('admin'),dbo.getXportalUIdByLoginId('admin'),1);
@@ -2412,6 +2441,8 @@ GO
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10055',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 GO
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10056',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
+GO
+INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('J10060',CURRENT_TIMESTAMP,'Ranger 3.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 GO
 INSERT INTO x_db_version_h (version,inst_at,inst_by,updated_at,updated_by,active) VALUES ('JAVA_PATCHES',CURRENT_TIMESTAMP,'Ranger 1.0.0',CURRENT_TIMESTAMP,'localhost','Y');
 GO

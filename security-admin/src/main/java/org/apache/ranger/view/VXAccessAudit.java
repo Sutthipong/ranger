@@ -26,8 +26,6 @@
 
 import java.util.Date;
 
-import javax.xml.bind.annotation.XmlRootElement;
-
 import org.apache.ranger.common.AppConstants;
 import org.apache.ranger.common.DateUtil;
 import org.apache.ranger.common.RangerConstants;
@@ -40,7 +38,6 @@ import org.codehaus.jackson.map.annotate.JsonSerialize;
 @JsonAutoDetect(getterVisibility=Visibility.NONE, setterVisibility=Visibility.NONE, fieldVisibility=Visibility.ANY)
 @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL )
 @JsonIgnoreProperties(ignoreUnknown=true)
-@XmlRootElement
 public class VXAccessAudit extends VXDataObject implements java.io.Serializable {
 	private static final long serialVersionUID = 1L;
 
@@ -140,7 +137,11 @@ public class VXAccessAudit extends VXDataObject implements java.io.Serializable 
 	protected long eventDuration;
 	
 	protected String tags;
-	
+
+	protected String datasets;
+
+	protected String projects;
+
 	protected String clusterName;
 
 	// Security Zone
@@ -551,7 +552,24 @@ public class VXAccessAudit extends VXDataObject implements java.io.Serializable 
 	public void setTags(String tags) {
 		this.tags = tags;
 	}
-	
+
+	public String getDatasets() {
+		return datasets;
+	}
+
+	public void setDatasets(String datasets) {
+		this.datasets = datasets;
+	}
+
+	public String getProjects() {
+		return projects;
+	}
+
+	public void setProjects(String projects) {
+		this.projects = projects;
+	}
+
+
 	/**
 	 * @return the clusterName
 	 */
@@ -648,6 +666,8 @@ public class VXAccessAudit extends VXDataObject implements java.io.Serializable 
 		str += "eventCount={" + eventCount + "}";
 		str += "eventDuration={" + eventDuration + "}";
 		str += "tags={" + tags + "}";
+		str += "datasets={" + datasets + "}";
+		str += "projects={" + projects + "}";
 		str += "clusterName={" + clusterName + "}";
 		str += "zoneName={" + zoneName + "}";
 		str += "agentHost={" + agentHost + "}";

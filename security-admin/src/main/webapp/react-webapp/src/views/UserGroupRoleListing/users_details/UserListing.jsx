@@ -43,7 +43,6 @@ import {
   useSearchParams
 } from "react-router-dom";
 import qs from "qs";
-
 import { fetchApi } from "Utils/fetchAPI";
 import { toast } from "react-toastify";
 import { SyncSourceDetails } from "../SyncSourceDetails";
@@ -52,9 +51,10 @@ import {
   isKeyAdmin,
   isAuditor,
   isKMSAuditor,
-  serverError
+  serverError,
+  parseSearchFilter
 } from "Utils/XAUtils";
-import { find, isEmpty, isUndefined, map, sortBy } from "lodash";
+import { find, isEmpty, isUndefined, sortBy } from "lodash";
 import { getUserAccessRoleList } from "Utils/XAUtils";
 import StructuredFilter from "../../../components/structured-filter/react-typeahead/tokenizer";
 import { BlockUi, Loader } from "../../../components/CommonComponents";
@@ -66,6 +66,7 @@ function Users() {
   const [userListingData, setUserData] = useState([]);
   const fetchIdRef = useRef(0);
   const selectedRows = useRef([]);
+  const toastId = useRef(null);
   const [showModal, setConfirmModal] = useState(false);
   const [showUserSyncDetails, setUserSyncdetails] = useState({
     syncDteails: {},
@@ -93,7 +94,7 @@ function Users() {
   const [defaultSearchFilterParams, setDefaultSearchFilterParams] = useState(
     []
   );
-
+  const isKMSRole = isKeyAdmin() || isKMSAuditor();
   const [pageLoader, setPageLoader] = useState(true);
   const [blockUI, setBlockUI] = useState(false);
 
@@ -104,10 +105,8 @@ function Users() {
 
     // Get Search Filter Params from current search params
     const currentParams = Object.fromEntries([...searchParams]);
-    console.log("PRINT search params : ", currentParams);
-
     for (const param in currentParams) {
-      let searchFilterObj = find(searchFilterOption, {
+      let searchFilterObj = find(searchFilterOptions, {
         urlLabel: param
       });
 
@@ -131,7 +130,7 @@ function Users() {
     }
 
     // Updating the states for search params, search filter and default search filter
-    setSearchParams({ ...currentParams, ...searchParam });
+    setSearchParams({ ...currentParams, ...searchParam }, { replace: true });
     if (
       JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
     ) {
@@ -139,18 +138,13 @@ function Users() {
     }
     setDefaultSearchFilterParams(defaultSearchFilterParam);
     setPageLoader(false);
-
-    console.log(
-      "PRINT Final searchFilterParam to server : ",
-      searchFilterParam
-    );
-    console.log(
-      "PRINT Final defaultSearchFilterParam to tokenzier : ",
-      defaultSearchFilterParam
-    );
     localStorage.setItem("newDataAdded", state && state.showLastPage);
   }, [searchParams]);
-
+  useEffect(() => {
+    if (localStorage.getItem("newDataAdded") == "true") {
+      scrollToNewData(userListingData);
+    }
+  }, [totalCount]);
   const fetchUserInfo = useCallback(
     async ({ pageSize, pageIndex, gotoPage }) => {
       setLoader(true);
@@ -209,14 +203,7 @@ function Users() {
         setCurrentPageSize(pageSize);
         setResetPage({ page: gotoPage });
         setLoader(false);
-        if (
-          page == totalPageCount - 1 &&
-          localStorage.getItem("newDataAdded") == "true"
-        ) {
-          scrollToNewData(userData, userResp.data.resultSize);
-        }
       }
-      localStorage.removeItem("newDataAdded");
     },
     [updateTable, searchFilterParams]
   );
@@ -232,32 +219,45 @@ function Users() {
   const handleSetVisibility = async (e) => {
     if (selectedRows.current.length > 0) {
       let selectedRowData = selectedRows.current;
+      let obj = {};
       for (const { original } of selectedRowData) {
-        if (original.isVisible == e) {
-          toast.warning(
-            e == VisibilityStatus.STATUS_VISIBLE.value
-              ? "Selected user is already visible"
-              : "Selected user is already hidden"
-          );
-        } else {
-          let obj = {};
+        if (original.isVisible != e) {
           obj[original.id] = e;
-          try {
-            await fetchApi({
-              url: "xusers/secure/users/visibility",
-              method: "PUT",
-              data: obj
-            });
-            toast.success("Sucessfully updated Users visibility!!");
-            setUpdateTable(moment.now());
-          } catch (error) {
-            serverError(error);
-            console.log(`Error occurred during set Users visibility! ${error}`);
-          }
         }
       }
+      if (isEmpty(obj)) {
+        toast.dismiss(toastId.current);
+        toastId.current = toast.warning(
+          e == VisibilityStatus.STATUS_VISIBLE.value
+            ? `Selected ${
+                selectedRows.current.length === 1 ? "User is" : "Users are"
+              } already visible`
+            : `Selected ${
+                selectedRows.current.length === 1 ? "User is " : "Users are"
+              } already hidden`
+        );
+        return;
+      }
+      try {
+        await fetchApi({
+          url: "xusers/secure/users/visibility",
+          method: "PUT",
+          data: obj
+        });
+        toast.dismiss(toastId.current);
+        toastId.current = toast.success(
+          `Sucessfully updated ${
+            selectedRows.current.length === 1 ? "User" : "Users"
+          } visibility!!`
+        );
+        setUpdateTable(moment.now());
+      } catch (error) {
+        serverError(error);
+        console.error(`Error occurred during set User visibility! ${error}`);
+      }
     } else {
-      toast.warning("Please select atleast one user!!");
+      toast.dismiss(toastId.current);
+      toastId.current = toast.warning("Please select atleast one user!!");
     }
   };
 
@@ -279,25 +279,29 @@ function Users() {
           setBlockUI(false);
         } catch (error) {
           setBlockUI(false);
-          if (error.response.data.msgDesc) {
+          if (error?.response?.data?.msgDesc) {
             errorMsg += error.response.data.msgDesc + "\n";
           } else {
             errorMsg +=
               `Error occurred during deleting Users: ${original.name}` + "\n";
           }
-          console.log(errorMsg);
+          console.error(errorMsg);
         }
       }
       if (errorMsg) {
-        toast.error(errorMsg);
+        toast.dismiss(toastId.current);
+        toastId.current = toast.error(errorMsg);
       } else {
-        toast.success("User deleted successfully!");
+        toast.dismiss(toastId.current);
+        toastId.current = toast.success("User deleted successfully!");
         if (
           (userListingData.length == 1 ||
             userListingData.length == selectedRows.current.length) &&
-          currentpageIndex > 1
+          currentpageIndex > 0
         ) {
-          resetPage.page(0);
+          if (typeof resetPage?.page === "function") {
+            resetPage.page(0);
+          }
         } else {
           setUpdateTable(moment.now());
         }
@@ -314,7 +318,7 @@ function Users() {
           if (rawValue.value) {
             return (
               <Link
-                style={{maxWidth:"100%", display: "inline-block" }}
+                style={{ maxWidth: "100%", display: "inline-block" }}
                 className={`text-truncate ${
                   isAuditor() || isKMSAuditor()
                     ? "disabled-link text-secondary"
@@ -328,19 +332,24 @@ function Users() {
             );
           }
           return "--";
-        },
+        }
       },
       {
         Header: "Email Address",
         accessor: "emailAddress", // accessor is the "key" in the data
         Cell: (rawValue) => {
           if (rawValue.value) {
-            return <div style={{maxWidth:"100%", display: "inline-block" }}
-                         className="text-truncate"  title={rawValue.value}>
-                          {rawValue.value}
-                   </div>;
+            return (
+              <div
+                style={{ maxWidth: "100%", display: "inline-block" }}
+                className="text-truncate"
+                title={rawValue.value}
+              >
+                {rawValue.value}
+              </div>
+            );
           } else return <div className="text-center">--</div>;
-        },
+        }
       },
       {
         Header: "Role",
@@ -356,11 +365,11 @@ function Users() {
           }
           return <div className="textt-center">--</div>;
         },
-        width:70
+        width: 70
       },
       {
         Header: "User Source",
-        accessor: "userSource", // accessor is the "key" in the data
+        accessor: "userSource",
         Cell: (rawValue) => {
           if (rawValue.value !== null && rawValue.value !== undefined) {
             if (rawValue.value == UserSource.XA_PORTAL_USER.value)
@@ -381,7 +390,7 @@ function Users() {
               );
           } else return "--";
         },
-        width:70
+        width: 70
       },
       {
         Header: "Sync Source",
@@ -395,7 +404,7 @@ function Users() {
             <div className="text-center">--</div>
           );
         },
-        width:100
+        width: 100
       },
       {
         Header: "Groups",
@@ -419,7 +428,7 @@ function Users() {
           } else {
             return "--";
           }
-        },
+        }
       },
       {
         Header: "Visibility",
@@ -444,7 +453,7 @@ function Users() {
               );
           } else return <div className="text-center">--</div>;
         },
-        width:70
+        width: 70
       },
       {
         Header: "Sync Details",
@@ -471,8 +480,8 @@ function Users() {
           } else {
             return <div className="text-center">--</div>;
           }
-      },
-      width:80
+        },
+        width: 80
       }
     ],
     []
@@ -488,7 +497,7 @@ function Users() {
 
   const toggleUserSyncModal = (raw) => {
     setUserSyncdetails({
-      syncDteails: JSON.parse(raw),
+      syncDteails: !isEmpty(raw) && JSON.parse(raw),
       showSyncDetails: true
     });
   };
@@ -504,7 +513,7 @@ function Users() {
     handleDeleteClick();
   };
 
-  const searchFilterOption = [
+  const searchFilterOptions = [
     {
       category: "emailAddress",
       label: "Email Address",
@@ -517,11 +526,19 @@ function Users() {
       urlLabel: "role",
       type: "textoptions",
       options: () => {
-        return [
-          { value: "ROLE_USER", label: "User" },
-          { value: "ROLE_SYS_ADMIN", label: "Admin" },
-          { value: "ROLE_ADMIN_AUDITOR", label: "Auditor" }
-        ];
+        if (isKMSRole) {
+          return [
+            { value: "ROLE_USER", label: "User" },
+            { value: "ROLE_KEY_ADMIN", label: "KeyAdmin" },
+            { value: "ROLE_KEY_ADMIN_AUDITOR", label: "KMSAuditor" }
+          ];
+        } else {
+          return [
+            { value: "ROLE_USER", label: "User" },
+            { value: "ROLE_SYS_ADMIN", label: "Admin" },
+            { value: "ROLE_ADMIN_AUDITOR", label: "Auditor" }
+          ];
+        }
       }
     },
     {
@@ -582,37 +599,21 @@ function Users() {
   ];
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      searchFilterOptions
+    );
 
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(searchFilterOption, {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
-    resetPage.page(0);
+    setSearchParams(searchParam, { replace: true });
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   return (
     <div className="wrap">
-      <h4 className="wrap-header font-weight-bold">User List</h4>
       {pageLoader ? (
         <Loader />
       ) : (
@@ -623,9 +624,8 @@ function Users() {
               <StructuredFilter
                 key="user-listing-search-filter"
                 placeholder="Search for your users..."
-                options={sortBy(searchFilterOption, ["label"])}
-                onTokenAdd={updateSearchFilter}
-                onTokenRemove={updateSearchFilter}
+                options={sortBy(searchFilterOptions, ["label"])}
+                onChange={updateSearchFilter}
                 defaultSelected={defaultSearchFilterParams}
               />
             </Col>
@@ -644,8 +644,7 @@ function Users() {
                 <DropdownButton
                   title="Set Visibility"
                   size="sm"
-                  style={{ display: "inline-block" }}
-                  className="ml-1 btn-sm"
+                  className="ml-1 d-inline-block manage-visibility"
                   onSelect={handleSetVisibility}
                   data-id="hideShowVisibility"
                   data-cy="hideShowVisibility"
@@ -690,18 +689,20 @@ function Users() {
           />
 
           <Modal show={showModal} onHide={toggleConfirmModal}>
-            <Modal.Body>
-              Are you sure you want to delete&nbsp;
-              {selectedRows.current.length === 1 ? (
-                <span>
-                  <b>"{selectedRows.current[0].original.name}"</b> user ?
-                </span>
-              ) : (
-                <span>
-                  <b>"{selectedRows.current.length}"</b> users ?
-                </span>
-              )}
-            </Modal.Body>
+            <Modal.Header closeButton>
+              <span className="text-word-break">
+                Are you sure you want to delete the&nbsp;
+                {selectedRows.current.length === 1 ? (
+                  <>
+                    <b>"{selectedRows.current[0].original.name}"</b> user ?
+                  </>
+                ) : (
+                  <>
+                    selected<b> {selectedRows.current.length}</b> users?
+                  </>
+                )}
+              </span>
+            </Modal.Header>
             <Modal.Footer>
               <Button
                 variant="secondary"

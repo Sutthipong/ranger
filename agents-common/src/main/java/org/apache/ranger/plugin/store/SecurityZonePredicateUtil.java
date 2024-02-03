@@ -27,7 +27,6 @@ import org.apache.ranger.plugin.util.SearchFilter;
 import java.util.List;
 
 public class SecurityZonePredicateUtil extends AbstractPredicateUtil {
-
     public SecurityZonePredicateUtil() {
         super();
     }
@@ -38,7 +37,10 @@ public class SecurityZonePredicateUtil extends AbstractPredicateUtil {
 
         addPredicateForServiceName(filter.getParam(SearchFilter.SERVICE_NAME), predicates);
         addPredicateForMatchingZoneId(filter.getParam(SearchFilter.ZONE_ID), predicates);
-        addPredicateForNonMatchingZoneName(filter.getParam(SearchFilter.ZONE_NAME), predicates);
+        addPredicateForMatchingZoneName(filter.getParam(SearchFilter.ZONE_NAME), predicates);
+        addPredicateForNonMatchingZoneName(filter.getParam(SearchFilter.NOT_ZONE_NAME), predicates);
+		addPredicateForMatchingZoneNamePartial(filter.getParam(SearchFilter.ZONE_NAME_PARTIAL), predicates);
+		addPredicateForCreatedBy(filter.getParam(SearchFilter.CREATED_BY), predicates);
     }
 
     private Predicate addPredicateForServiceName(final String serviceName, List<Predicate> predicates) {
@@ -105,7 +107,10 @@ public class SecurityZonePredicateUtil extends AbstractPredicateUtil {
         return ret;
     }
 
-    private Predicate addPredicateForNonMatchingZoneName(final String zoneName, List<Predicate> predicates) {
+    private Predicate addPredicateForMatchingZoneName(final String zoneName, List<Predicate> predicates) {
+        if (StringUtils.isEmpty(zoneName)) {
+            return null;
+        }
 
         Predicate ret = new Predicate() {
             @Override
@@ -119,7 +124,7 @@ public class SecurityZonePredicateUtil extends AbstractPredicateUtil {
                 if(object instanceof RangerSecurityZone) {
                     RangerSecurityZone securityZone = (RangerSecurityZone) object;
 
-                    if (StringUtils.isEmpty(zoneName) || !StringUtils.equals(zoneName, securityZone.getName())) {
+                    if (StringUtils.equals(zoneName, securityZone.getName())) {
                         ret = true;
                     }
                 }
@@ -134,5 +139,104 @@ public class SecurityZonePredicateUtil extends AbstractPredicateUtil {
 
         return ret;
     }
+
+    private Predicate addPredicateForNonMatchingZoneName(final String zoneName, List<Predicate> predicates) {
+        if (StringUtils.isEmpty(zoneName)) {
+            return null;
+        }
+
+        Predicate ret = new Predicate() {
+            @Override
+            public boolean evaluate(Object object) {
+                if(object == null) {
+                    return false;
+                }
+
+                boolean ret = false;
+
+                if(object instanceof RangerSecurityZone) {
+                    RangerSecurityZone securityZone = (RangerSecurityZone) object;
+
+                    if (!StringUtils.equals(zoneName, securityZone.getName())) {
+                        ret = true;
+                    }
+                }
+
+                return ret;
+            }
+        };
+
+        if(predicates != null) {
+            predicates.add(ret);
+        }
+
+        return ret;
+    }
+
+	private Predicate addPredicateForMatchingZoneNamePartial(final String zoneName, List<Predicate> predicates) {
+		if (StringUtils.isEmpty(zoneName)) {
+			return null;
+		}
+
+		Predicate ret = new Predicate() {
+			@Override
+			public boolean evaluate(Object object) {
+				if (object == null) {
+					return false;
+				}
+
+				boolean ret = false;
+
+				if (object instanceof RangerSecurityZone) {
+					RangerSecurityZone securityZone = (RangerSecurityZone) object;
+
+					if (StringUtils.contains(securityZone.getName(), zoneName)) {
+						ret = true;
+					}
+				}
+
+				return ret;
+			}
+		};
+
+		if (predicates != null) {
+			predicates.add(ret);
+		}
+
+		return ret;
+	}
+
+	private Predicate addPredicateForCreatedBy(final String createdBy, List<Predicate> predicates) {
+		if (StringUtils.isEmpty(createdBy)) {
+			return null;
+		}
+
+		Predicate ret = new Predicate() {
+			@Override
+			public boolean evaluate(Object object) {
+				if (object == null) {
+					return false;
+				}
+
+				boolean ret = false;
+
+				if (object instanceof RangerSecurityZone) {
+					RangerSecurityZone securityZone = (RangerSecurityZone) object;
+
+					if (StringUtils.equals(securityZone.getCreatedBy(), createdBy)) {
+						ret = true;
+					}
+				}
+
+				return ret;
+			}
+		};
+
+		if (predicates != null) {
+			predicates.add(ret);
+		}
+
+		return ret;
+	}
 }
 

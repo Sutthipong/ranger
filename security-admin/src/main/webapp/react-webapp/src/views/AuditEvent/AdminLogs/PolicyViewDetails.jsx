@@ -23,14 +23,18 @@ import { Table, Badge, Row, Col } from "react-bootstrap";
 import { RangerPolicyType, DefStatus } from "../../../utils/XAEnums";
 import dateFormat from "dateformat";
 import { toast } from "react-toastify";
-import { find, isEmpty, sortBy } from "lodash";
-import { serverError } from "../../../utils/XAUtils";
+import { find, isEmpty, map, sortBy } from "lodash";
+import { getResourcesDefVal, serverError } from "../../../utils/XAUtils";
 import { ModalLoader } from "../../../components/CommonComponents";
+import { getServiceDef } from "../../../utils/appState";
 
 export function PolicyViewDetails(props) {
   const [access, setAccess] = useState([]);
   const [loader, SetLoader] = useState(true);
-  const { serviceDef, updateServices } = props;
+  const [serviceDef, setServiceDef] = useState({});
+  const { updateServices } = props;
+  let { allServiceDefs } = getServiceDef();
+  const isMultiResources = true;
 
   useEffect(() => {
     if (props.paramsData.isRevert) {
@@ -39,7 +43,7 @@ export function PolicyViewDetails(props) {
       if (props.paramsData.isChangeVersion) {
         fetchByVersion();
       } else {
-        fetchInitalData();
+        fetchInitialData();
       }
     }
   }, [
@@ -47,7 +51,7 @@ export function PolicyViewDetails(props) {
       ? props.paramsData.isRevert
       : props.paramsData.version || props.paramsData.policyVersion
   ]);
-  const fetchInitalData = async () => {
+  const fetchInitialData = async () => {
     await fetchByEventTime();
   };
 
@@ -61,6 +65,7 @@ export function PolicyViewDetails(props) {
           versionNo: paramsData.policyVersion
         }
       : "";
+    let accessLogsServiceDef;
 
     try {
       accesslogs = await fetchApi({
@@ -72,8 +77,11 @@ export function PolicyViewDetails(props) {
     } catch (error) {
       console.error(`eventTime can not be undefined ${error}`);
     }
-
-    setAccess(accesslogs.data);
+    accessLogsServiceDef = allServiceDefs?.find((servicedef) => {
+      return servicedef.name == accesslogs?.data?.serviceType;
+    });
+    setAccess(accesslogs?.data);
+    setServiceDef(accessLogsServiceDef);
     SetLoader(false);
   };
 
@@ -88,7 +96,7 @@ export function PolicyViewDetails(props) {
     } catch (error) {
       console.error(`versionNo can not be undefined ${error}`);
     }
-    setAccess(accesslogs.data);
+    setAccess(accesslogs?.data);
   };
 
   const fetchPolicyVersions = async () => {
@@ -108,7 +116,7 @@ export function PolicyViewDetails(props) {
       );
       serverError(error);
     }
-    setAccess(accesslogs && accesslogs.data);
+    setAccess(accesslogs?.data);
   };
 
   const {
@@ -136,8 +144,75 @@ export function PolicyViewDetails(props) {
     updateTime,
     createdBy,
     createTime,
-    validitySchedules
+    validitySchedules,
+    zoneName,
+    additionalResources
   } = access;
+  let additionalResourcesVal = [];
+  if (isMultiResources) {
+    additionalResourcesVal = [resources, ...(additionalResources || [])];
+  }
+
+  const getPolicyResources = (policyType, resourceval) => {
+    var filterResources = [];
+    let serviceTypeData = serviceDef;
+    var resourceDef = getResourcesDefVal(serviceTypeData, policyType);
+    for (let key in resourceval) {
+      let filterResourcesVal = find(resourceDef, { name: key });
+      let resource = {};
+      resource.label = filterResourcesVal && filterResourcesVal.label;
+      resource.level = filterResourcesVal && filterResourcesVal.level;
+      resource.values = resourceval[key].values;
+      if (filterResourcesVal && filterResourcesVal.recursiveSupported) {
+        resource.Rec_Recursive = resourceval[key].isRecursive
+          ? DefStatus.RecursiveStatus.STATUS_RECURSIVE.label
+          : DefStatus.RecursiveStatus.STATUS_NONRECURSIVE.label;
+      }
+      if (filterResourcesVal && filterResourcesVal.excludesSupported) {
+        resource.Rec_Exc = resourceval[key].isExcludes
+          ? DefStatus.ExcludeStatus.STATUS_EXCLUDE.label
+          : DefStatus.ExcludeStatus.STATUS_INCLUDE.label;
+      }
+      filterResources.push(resource);
+    }
+    return (
+      <>
+        {sortBy(filterResources, "level").map((obj) => (
+          <tr key={obj.level}>
+            <td>{obj.label}</td>
+            <td>
+              <Row>
+                <Col md={9} className="d-flex flex-wrap">
+                  {obj.values.map((val, index) => (
+                    <Badge
+                      className="d-inline mr-1 text-left"
+                      variant="info"
+                      key={index}
+                    >
+                      <span className="d-inline mr-1 item" key={val}>
+                        {val}
+                      </span>
+                    </Badge>
+                  ))}
+                </Col>
+                <Col className="text-right" md={3}>
+                  <h6 className="d-inline mr-1">
+                    <Badge variant="dark text-capitalize">{obj.Rec_Exc}</Badge>
+                  </h6>
+
+                  <h6 className="d-inline mr-1">
+                    <Badge variant="dark text-capitalize">
+                      {obj.Rec_Recursive}
+                    </Badge>
+                  </h6>
+                </Col>
+              </Row>
+            </td>
+          </tr>
+        ))}
+      </>
+    );
+  };
 
   const getPolicyDetails = () => {
     const getPolicyType = (policyTypeVal) => {
@@ -199,74 +274,6 @@ export function PolicyViewDetails(props) {
       );
     };
 
-    const getPolicyResources = (policyType, resourceval) => {
-      var resourceDef;
-      var filterResources = [];
-      let serviceTypeData = serviceDef;
-      if (policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value) {
-        resourceDef = serviceTypeData && serviceTypeData.resources;
-      }
-      if (policyType == RangerPolicyType.RANGER_MASKING_POLICY_TYPE.value) {
-        resourceDef = serviceTypeData && serviceTypeData.dataMaskDef.resources;
-      }
-      if (policyType == RangerPolicyType.RANGER_ROW_FILTER_POLICY_TYPE.value) {
-        resourceDef = serviceTypeData && serviceTypeData.rowFilterDef.resources;
-      }
-      for (let key in resourceval) {
-        let filterResourcesVal = find(resourceDef, { name: key });
-        let resource = {};
-        resource.label = filterResourcesVal && filterResourcesVal.label;
-        resource.level = filterResourcesVal && filterResourcesVal.level;
-        resource.values = resourceval[key].values;
-        if (filterResourcesVal && filterResourcesVal.recursiveSupported) {
-          resource.Rec_Recursive = resourceval[key].isRecursive
-            ? DefStatus.RecursiveStatus.STATUS_RECURSIVE.label
-            : DefStatus.RecursiveStatus.STATUS_NONRECURSIVE.label;
-        }
-        if (filterResourcesVal && filterResourcesVal.excludesSupported) {
-          resource.Rec_Exc = resourceval[key].isExcludes
-            ? DefStatus.ExcludeStatus.STATUS_EXCLUDE.label
-            : DefStatus.ExcludeStatus.STATUS_INCLUDE.label;
-        }
-        filterResources.push(resource);
-      }
-      return (
-        <>
-          {sortBy(filterResources, "level").map((obj) => (
-            <tr key={obj.level}>
-              <td>{obj.label}</td>
-              <td>
-                <Row>
-                  <Col>
-                    {obj.values.map((val) => (
-                      <h6 className="d-inline mr-1">
-                        <Badge
-                          className="d-inline mr-1"
-                          variant="info"
-                          key={val}
-                        >
-                          {val}
-                        </Badge>
-                      </h6>
-                    ))}
-                  </Col>
-                  <Col className="text-right">
-                    <h6 className="d-inline mr-1">
-                      <Badge variant="dark">{obj.Rec_Exc}</Badge>
-                    </h6>
-
-                    <h6 className="d-inline mr-1">
-                      <Badge variant="dark">{obj.Rec_Recursive}</Badge>
-                    </h6>
-                  </Col>
-                </Row>
-              </td>
-            </tr>
-          ))}
-        </>
-      );
-    };
-
     return loader ? (
       <ModalLoader />
     ) : (
@@ -299,10 +306,11 @@ export function PolicyViewDetails(props) {
           <td className="text-nowrap">Policy Labels </td>
           <td>
             {!isEmpty(policyLabels)
-              ? policyLabels.map((policyLabel) => (
+              ? policyLabels.map((policyLabel, index) => (
                   <Badge
                     variant="dark"
                     className="mr-1 more-less-width text-truncate"
+                    key={index}
                   >
                     {policyLabel}
                   </Badge>
@@ -310,10 +318,10 @@ export function PolicyViewDetails(props) {
               : "--"}
           </td>
         </tr>
-        {getPolicyResources(policyType, resources)}
+        {!isMultiResources && getPolicyResources(policyType, resources)}
         <tr>
           <td className="text-nowrap">Description</td>
-          <td>{description}</td>
+          <td>{!isEmpty(description) ? description : "--"}</td>
         </tr>
         <tr>
           <td className="text-nowrap">Audit Logging </td>
@@ -325,6 +333,16 @@ export function PolicyViewDetails(props) {
             </h6>
           </td>
         </tr>
+        {!isEmpty(zoneName) && (
+          <tr>
+            <td className="text-nowrap">Zone Name </td>
+            <td>
+              <h6 className="d-inline mr-1">
+                <Badge variant="dark">{zoneName}</Badge>
+              </h6>
+            </td>
+          </tr>
+        )}
       </>
     );
   };
@@ -432,14 +450,18 @@ export function PolicyViewDetails(props) {
                     ) && (
                       <td className="text-center">
                         {!isEmpty(items.conditions)
-                          ? items.conditions.map((obj) => {
+                          ? items.conditions.map((obj, index) => {
+                              let conditionObj =
+                                filterServiceDef.policyConditions.find((e) => {
+                                  return e.name == obj.type;
+                                });
                               return (
-                                <h6 className="d-inline mr-1">
+                                <h6 className="d-inline mr-1" key={index}>
                                   <Badge
                                     variant="info"
                                     className="d-inline mr-1"
                                     key={obj.values}
-                                  >{`${obj.type}: ${obj.values.join(
+                                  >{`${conditionObj.label}: ${obj.values.join(
                                     ", "
                                   )}`}</Badge>
                                 </h6>
@@ -449,19 +471,24 @@ export function PolicyViewDetails(props) {
                       </td>
                     )}
 
-                      {!isEmpty(items.accesses)
-                        ?<td className="text-center d-flex flex-wrap policyview-permission-wrap"> {items.accesses.map((obj) => (
-                            <h6 className="d-inline mr-1">
-                              <Badge
-                                variant="info"
-                                className="d-inline mr-1"
-                                key={obj.type}
-                              >
-                                {obj.type}
-                              </Badge>
-                            </h6>
-                          ))}</td>
-                        : <td className="text-center">--</td>}
+                    {!isEmpty(items.accesses) ? (
+                      <td className="text-center d-flex flex-wrap policyview-permission-wrap">
+                        {" "}
+                        {items.accesses.map((obj, index) => (
+                          <h6 className="d-inline mr-1" key={index}>
+                            <Badge
+                              variant="info"
+                              className="d-inline mr-1"
+                              key={obj.type}
+                            >
+                              {obj.type}
+                            </Badge>
+                          </h6>
+                        ))}
+                      </td>
+                    ) : (
+                      <td className="text-center">--</td>
+                    )}
 
                     {policyType ==
                       RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value &&
@@ -515,7 +542,7 @@ export function PolicyViewDetails(props) {
     return tableRow;
   };
 
-  const getPolicyConditions = (conditions, serviceDef, serviceType) => {
+  const getPolicyConditions = (conditions, serviceDef) => {
     let filterServiceDef = serviceDef;
     const getConditionLabel = (label) => {
       let filterLabel = "";
@@ -528,27 +555,18 @@ export function PolicyViewDetails(props) {
       !isEmpty(conditions) && (
         <>
           <p className="form-header">Policy Conditions :</p>
-          <div className="overflow-auto"><Table bordered size="sm" className="table-audit-filter-ready-only">
-            <tbody>
-              {serviceType == "tag" ? (
-                conditions.map((obj) => (
+          <div className="overflow-auto">
+            <Table bordered size="sm" className="table-audit-filter-ready-only">
+              <tbody>
+                {conditions.map((obj) => (
                   <tr key={obj.type} colSpan="2">
                     <td width="40%">{getConditionLabel(obj.type)}</td>
-                    <td width="60% text-truncate">{obj.values}</td>
+                    <td width="60% text-truncate">{obj.values.join(", ")}</td>
                   </tr>
-                ))
-              ) : (
-                <tr colSpan="2">
-                  <td width="20%">
-                    {filterServiceDef.policyConditions.map((obj) => obj.label)}
-                  </td>
-                  <td className="text-left">
-                    {conditions.map((val) => val.values).join("")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-            </Table></div>
+                ))}
+              </tbody>
+            </Table>
+          </div>
         </>
       )
     );
@@ -608,6 +626,7 @@ export function PolicyViewDetails(props) {
       )
     );
   };
+
   return loader ? (
     <ModalLoader />
   ) : (
@@ -630,21 +649,46 @@ export function PolicyViewDetails(props) {
           <tbody>{getPolicyDetails(serviceDef)}</tbody>
         </Table>
       </div>
+      {isMultiResources && (
+        <>
+          <p className="form-header">Policy Resource :</p>
+          {additionalResourcesVal &&
+            map(additionalResourcesVal, (resourcesVal, index) => (
+              <>
+                <Table
+                  bordered
+                  size="sm"
+                  className="table-audit-filter-ready-only"
+                  key={index}
+                >
+                  <thead>
+                    <tr>
+                      <th className="text-left" colSpan={2}>
+                        #{index + 1}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>{getPolicyResources(policyType, resourcesVal)}</tbody>
+                </Table>
+              </>
+            ))}
+        </>
+      )}
       {(policyType == RangerPolicyType.RANGER_MASKING_POLICY_TYPE.value ||
         RangerPolicyType.RANGER_ROW_FILTER_POLICY_TYPE.value) &&
         !isEmpty(validitySchedules) &&
         getValidityPeriod(validitySchedules)}
       {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
-        <>{getPolicyConditions(conditions, serviceDef, serviceType)}</>
+        <>{getPolicyConditions(conditions, serviceDef)}</>
       )}
       {policyType == RangerPolicyType.RANGER_MASKING_POLICY_TYPE.value &&
         serviceType == "tag" && (
-          <>{getPolicyConditions(conditions, serviceDef, serviceType)}</>
+          <>{getPolicyConditions(conditions, serviceDef)}</>
         )}
 
       {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
         <>
-          <p className="form-header">Allow Condition :</p>
+          <p className="form-header">Allow Conditions :</p>
           <div className="overflow-auto">
             <Table bordered size="sm" className="table-audit-filter-ready-only">
               {getFilterPolicy(
@@ -660,45 +704,52 @@ export function PolicyViewDetails(props) {
         </>
       )}
 
-      {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
-        <>
-          <p className="form-header">Exclude from Allow Conditions :</p>
-          <div className="overflow-auto">
-            <Table bordered size="sm" className="table-audit-filter-ready-only">
-              {getFilterPolicy(
-                allowExceptions,
-                serviceDef,
-                serviceType,
-                `No policy items of "Exclude from Allow Conditions" are present`
-              )}
-            </Table>
-          </div>
-          <br />
-        </>
-      )}
-      {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
-        <>
-          <b>
-            Deny All Other Accesses :{" "}
-            {isDenyAllElse == false ? (
-              <h6 className="d-inline">
-                <Badge variant="dark">FALSE</Badge>
-              </h6>
-            ) : (
-              <h6 className="d-inline">
-                <Badge variant="dark">TRUE</Badge>
-              </h6>
-            )}
-            <br />
-          </b>
-
-          <br />
-        </>
-      )}
-      {isDenyAllElse == false &&
-        policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
+      {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value &&
+        serviceDef?.options?.enableDenyAndExceptionsInPolicies == "true" && (
           <>
-            <p className="form-header">Deny Condition :</p>
+            <p className="form-header">Exclude from Allow Conditions :</p>
+            <div className="overflow-auto">
+              <Table
+                bordered
+                size="sm"
+                className="table-audit-filter-ready-only"
+              >
+                {getFilterPolicy(
+                  allowExceptions,
+                  serviceDef,
+                  serviceType,
+                  `No policy items of "Exclude from Allow Conditions" are present`
+                )}
+              </Table>
+            </div>
+            <br />
+          </>
+        )}
+      {policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value &&
+        serviceDef?.options?.enableDenyAndExceptionsInPolicies == "true" && (
+          <>
+            <b>
+              Deny All Other Accesses :{" "}
+              {isDenyAllElse == false ? (
+                <h6 className="d-inline">
+                  <Badge variant="dark">FALSE</Badge>
+                </h6>
+              ) : (
+                <h6 className="d-inline">
+                  <Badge variant="dark">TRUE</Badge>
+                </h6>
+              )}
+              <br />
+            </b>
+
+            <br />
+          </>
+        )}
+      {isDenyAllElse == false &&
+        policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value &&
+        serviceDef?.options?.enableDenyAndExceptionsInPolicies == "true" && (
+          <>
+            <p className="form-header">Deny Conditions :</p>
             <div className="overflow-auto">
               <Table
                 bordered
@@ -709,7 +760,7 @@ export function PolicyViewDetails(props) {
                   denyPolicyItems,
                   serviceDef,
                   serviceType,
-                  ` No policy items of "Deny Condition" are present`
+                  ` No policy items of "Deny Conditions" are present`
                 )}
               </Table>
             </div>
@@ -717,7 +768,8 @@ export function PolicyViewDetails(props) {
           </>
         )}
       {isDenyAllElse == false &&
-        policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value && (
+        policyType == RangerPolicyType.RANGER_ACCESS_POLICY_TYPE.value &&
+        serviceDef?.options?.enableDenyAndExceptionsInPolicies == "true" && (
           <>
             <p className="form-header">Exclude from Deny Conditions :</p>
             <div className="overflow-auto">
@@ -768,8 +820,8 @@ export function PolicyViewDetails(props) {
           </div>
         </>
       )}
-      <div class="updateInfo">
-        <div class="pull-left">
+      <div className="updateInfo">
+        <div className="pull-left">
           <p>
             <strong>Updated By : </strong> {updatedBy}
           </p>
@@ -778,7 +830,7 @@ export function PolicyViewDetails(props) {
             {dateFormat(updateTime, "mm/dd/yyyy hh:MM TT ")}
           </p>
         </div>
-        <div class="pull-right">
+        <div className="pull-right">
           <p>
             <strong>Created By : </strong> {createdBy}
           </p>

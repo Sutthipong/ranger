@@ -26,12 +26,13 @@ import AdminModal from "./AdminModal";
 import dateFormat from "dateformat";
 import { AuditFilterEntries } from "Components/CommonComponents";
 import moment from "moment-timezone";
-import { find, map, sortBy } from "lodash";
+import { sortBy } from "lodash";
 import StructuredFilter from "../../components/structured-filter/react-typeahead/tokenizer";
 import {
   getTableSortBy,
   getTableSortType,
   fetchSearchFilterParams,
+  parseSearchFilter,
   serverError
 } from "../../utils/XAUtils";
 import { Loader } from "../../components/CommonComponents";
@@ -68,7 +69,7 @@ function Login_Sessions() {
       );
 
     // Updating the states for search params, search filter, default search filter and localStorage
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     if (
       JSON.stringify(searchFilterParams) !== JSON.stringify(searchFilterParam)
     ) {
@@ -286,34 +287,18 @@ function Login_Sessions() {
   );
 
   const updateSearchFilter = (filter) => {
-    console.log("PRINT Filter from tokenizer : ", filter);
-
-    let searchFilterParam = {};
-    let searchParam = {};
-
-    map(filter, function (obj) {
-      searchFilterParam[obj.category] = obj.value;
-
-      let searchFilterObj = find(searchFilterOptions, {
-        category: obj.category
-      });
-
-      let urlLabelParam = searchFilterObj.urlLabel;
-
-      if (searchFilterObj.type == "textoptions") {
-        let textOptionObj = find(searchFilterObj.options(), {
-          value: obj.value
-        });
-        searchParam[urlLabelParam] = textOptionObj.label;
-      } else {
-        searchParam[urlLabelParam] = obj.value;
-      }
-    });
+    let { searchFilterParam, searchParam } = parseSearchFilter(
+      filter,
+      searchFilterOptions
+    );
 
     setSearchFilterParams(searchFilterParam);
-    setSearchParams(searchParam);
+    setSearchParams(searchParam, { replace: true });
     localStorage.setItem("loginSession", JSON.stringify(searchParam));
-    resetPage.page(0);
+
+    if (typeof resetPage?.page === "function") {
+      resetPage.page(0);
+    }
   };
 
   const searchFilterOptions = [
@@ -397,8 +382,7 @@ function Login_Sessions() {
                 key="login-session-search-filter"
                 placeholder="Search for your login sessions..."
                 options={sortBy(searchFilterOptions, ["label"])}
-                onTokenAdd={updateSearchFilter}
-                onTokenRemove={updateSearchFilter}
+                onChange={updateSearchFilter}
                 defaultSelected={defaultSearchFilterParams}
               />
             </div>

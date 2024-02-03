@@ -65,7 +65,7 @@ class ImportPolicy extends Component {
     });
   };
 
-  handleFileUpload = (e) => {
+  handleFileUpload = (e, values) => {
     e.preventDefault();
     const fileReader = new FileReader();
     fileReader.readAsText(e.target.files[0]);
@@ -132,11 +132,14 @@ class ImportPolicy extends Component {
       const formFields = {};
       formFields["serviceFields"] = serviceFieldsFromJson;
       formFields["sourceZoneName"] = zoneNameJsonParseFile;
+      formFields["isOverride"] = values.isOverride;
 
       this.setState({
         fileJsonData: jsonParseFileData,
         sourceServicesMap: servicesJsonParseFile,
-        destServices:  this.props.isParentImport ? this.props.allServices : this.props.services,
+        destServices: this.props.isParentImport
+          ? this.props.allServices
+          : this.props.services,
         sourceZoneName: zoneNameJsonParseFile,
         initialFormFields: formFields,
         filterFormFields: formFields
@@ -202,7 +205,8 @@ class ImportPolicy extends Component {
     }
   };
 
-  handleSelectedZone = async (e) => {
+  handleSelectedZone = async (e, values) => {
+    const formFields = {};
     let zonesResp = [];
 
     try {
@@ -236,10 +240,10 @@ class ImportPolicy extends Component {
           };
         });
 
-        const formFields = {};
         formFields["serviceFields"] = serviceFieldsFromJson;
         formFields["sourceZoneName"] =
           this.state.initialFormFields["sourceZoneName"];
+        formFields["isOverride"] = values.isOverride;
 
         this.setState({
           destZoneName: e && e.label,
@@ -247,16 +251,24 @@ class ImportPolicy extends Component {
           filterFormFields: formFields
         });
       } else {
+        formFields["serviceFields"] =
+          this.state.initialFormFields["serviceFields"];
+        formFields["sourceZoneName"] =
+          this.state.initialFormFields["sourceZoneName"];
+        formFields["isOverride"] = values.isOverride;
+
         this.setState({
           destZoneName: "",
-          destServices:  this.props.isParentImport ? this.props.allServices : this.props.services,
-          filterFormFields: this.state.initialFormFields
+          destServices: this.props.isParentImport
+            ? this.props.allServices
+            : this.props.services,
+          filterFormFields: formFields
         });
       }
     } catch (error) {
       serverError(error);
       console.error(
-        `Error occurred while fetching Service Definitions or CSRF headers! ${error}`
+        `Error occurred while fetching Services from selected Zone! ${error}`
       );
     }
   };
@@ -274,17 +286,20 @@ class ImportPolicy extends Component {
       label: service.name
     }));
   };
-
   Theme = (theme) => {
     return {
       ...theme,
       colors: {
         ...theme.colors,
-        text: "#444444",
-        primary25: "#0b7fad;",
-        primary: "#0b7fad;"
+        primary: "#0081ab"
       }
     };
+  };
+  CustomStyles = {
+    option: (provided, state) => ({
+      ...provided,
+      color: state.isSelected ? "white" : "black"
+    })
   };
 
   requiredField = (value) =>
@@ -316,6 +331,7 @@ class ImportPolicy extends Component {
             initialValues={this.state.filterFormFields}
             render={({
               handleSubmit,
+              values,
               form: {
                 mutators: { push: addItem, pop: removeItem }
               }
@@ -352,7 +368,9 @@ class ImportPolicy extends Component {
                                       type="file"
                                       className="form-control-file"
                                       accept=" .json "
-                                      onChange={this.handleFileUpload}
+                                      onChange={(e) =>
+                                        this.handleFileUpload(e, values)
+                                      }
                                     />
                                   </label>
                                 </div>
@@ -445,12 +463,15 @@ class ImportPolicy extends Component {
                               <Col sm={1}>To</Col>
                               <Col sm={4}>
                                 <Select
-                                  onChange={this.handleSelectedZone}
+                                  onChange={(e) =>
+                                    this.handleSelectedZone(e, values)
+                                  }
                                   isClearable
                                   components={{
                                     IndicatorSeparator: () => null
                                   }}
                                   theme={this.Theme}
+                                  styles={this.CustomStyles}
                                   options={this.props.zones.map((zone) => {
                                     return {
                                       value: zone.id,
@@ -497,6 +518,8 @@ class ImportPolicy extends Component {
                                               options={this.getSourceServiceOptions()}
                                               menuPlacement="auto"
                                               placeholder="Enter service name"
+                                              theme={this.Theme}
+                                              styles={this.CustomStyles}
                                             />
                                             {meta.error && meta.touched && (
                                               <span className="invalid-field">
@@ -522,6 +545,8 @@ class ImportPolicy extends Component {
                                               options={this.getDestServiceOptions()}
                                               menuPlacement="auto"
                                               placeholder="Select service name"
+                                              theme={this.Theme}
+                                              styles={this.CustomStyles}
                                             />
                                             {meta.error && meta.touched && (
                                               <span className="invalid-field">
@@ -595,7 +620,7 @@ class ImportPolicy extends Component {
                   ) : (
                     <Button
                       variant="primary"
-                      className="btn-mini"
+                      size="sm"
                       onClick={this.props.onHide}
                     >
                       OK

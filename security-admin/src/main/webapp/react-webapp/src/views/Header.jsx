@@ -22,17 +22,15 @@ import React, { Component } from "react";
 import { Nav, Navbar, NavDropdown } from "react-bootstrap";
 import { Link, NavLink } from "react-router-dom";
 import { getUserProfile, setUserProfile } from "Utils/appState";
-import { fetchApi } from "Utils/fetchAPI";
-import { toast } from "react-toastify";
 import {
   hasAccessToTab,
   isAuditor,
   isKeyAdmin,
   isSystemAdmin,
   getBaseUrl,
-  isKMSAuditor
+  isKMSAuditor,
+  checkKnoxSSO
 } from "Utils/XAUtils";
-import { isUndefined } from "lodash";
 import withRouter from "Hooks/withRouter";
 
 class Header extends Component {
@@ -41,63 +39,10 @@ class Header extends Component {
     this.state = {};
   }
 
-  checkKnoxSSO = async (e) => {
-    e.preventDefault();
-    let checkKnoxSSOresp;
-    try {
-      checkKnoxSSOresp = await fetchApi({
-        url: "plugins/checksso",
-        type: "GET",
-        headers: {
-          "cache-control": "no-cache"
-        }
-      });
-      if (
-        checkKnoxSSOresp.data == "true" &&
-        userProps?.configProperties?.inactivityTimeout > 0
-      ) {
-        window.location.replace("index.html?action=timeout");
-      } else {
-        this.handleLogout(checkKnoxSSOresp.data);
-      }
-    } catch (error) {
-      if (checkKnoxSSOresp?.status == "419") {
-        setUserProfile(null);
-        window.location.replace("login.jsp");
-      }
-      console.error(`Error occurred while logout! ${error}`);
-    }
-  };
-
-  handleLogout = async (checkKnoxSSOVal) => {
-    let logoutResp = {};
-    try {
-      logoutResp = await fetchApi({
-        url: "logout",
-        baseURL: "",
-        headers: {
-          "cache-control": "no-cache"
-        }
-      });
-      if (checkKnoxSSOVal !== undefined || checkKnoxSSOVal !== null) {
-        if (checkKnoxSSOVal == false) {
-          window.location.replace("locallogin");
-          window.localStorage.clear();
-          setUserProfile(null);
-        } else {
-          this.props.navigate("/knoxSSOWarning");
-        }
-      } else {
-        window.location.replace("login.jsp");
-      }
-    } catch (error) {
-      toast.error(`Error occurred while logout! ${error}`);
-    }
-  };
-
   render() {
     const userProps = getUserProfile();
-    const apiUrl = getBaseUrl() + "apidocs/index.html";
+    const apiUrl = getBaseUrl() + "apidocs/swagger.html";
+    const backboneUrl = getBaseUrl() + "backbone-index.html";
     const loginId = (
       <span className="login-id">
         <i className="fa fa-user-circle fa-lg"></i>
@@ -142,7 +87,11 @@ class Header extends Component {
           <Navbar.Toggle aria-controls="responsive-navbar-nav" />
           <Navbar.Collapse id="responsive-navbar-nav">
             <Nav className="mr-auto">
-              <NavDropdown title={accessManager} className="header-dropdown" renderMenuOnMount={true}>
+              <NavDropdown
+                title={accessManager}
+                className="header-dropdown"
+                renderMenuOnMount={true}
+              >
                 {hasAccessToTab("Resource Based Policies") && (
                   <NavDropdown.Item to="/policymanager/resource" as={NavLink}>
                     <i className="fa fa-fw fa-file m-r-xs"></i> Resource Based
@@ -170,7 +119,6 @@ class Header extends Component {
                   Audit
                 </Nav.Link>
               )}
-
               {hasAccessToTab("Security Zone") && (
                 <React.Fragment>
                   {!isKeyAdmin() && (
@@ -187,7 +135,11 @@ class Header extends Component {
               {hasAccessToTab("Key Manager") && (
                 <React.Fragment>
                   {(isKeyAdmin() || isKMSAuditor()) && (
-                    <NavDropdown title={encryption}>
+                    <NavDropdown
+                      title={encryption}
+                      className="header-dropdown"
+                      renderMenuOnMount={true}
+                    >
                       <NavDropdown.Item
                         to="/kms/keys/new/manage/service"
                         as={NavLink}
@@ -198,41 +150,48 @@ class Header extends Component {
                   )}
                 </React.Fragment>
               )}
-              <>
+              <React.Fragment>
                 {(hasAccessToTab("Users/Groups") ||
                   isAuditor() ||
                   isSystemAdmin()) && (
-                    <NavDropdown title={settings} className="header-dropdown" renderMenuOnMount={true}>
-                      {hasAccessToTab("Users/Groups") && (
-                        <NavDropdown.Item to="/users/usertab" as={NavLink}>
-                          <i className="fa-fw fa fa-group m-r-xs"></i>
-                          Users/Groups/Roles
-                        </NavDropdown.Item>
-                      )}
-                      {(isAuditor() || isSystemAdmin()) && (
-                        <NavDropdown.Item to="/permissions/models" as={NavLink}>
-                          <i className="fa-fw fa fa-file-o m-r-xs"></i>{" "}
-                          Permissions
-                        </NavDropdown.Item>
-                      )}
-                    </NavDropdown>
-                  )}
-              </>
+                  <NavDropdown
+                    title={settings}
+                    className="header-dropdown"
+                    renderMenuOnMount={true}
+                  >
+                    {hasAccessToTab("Users/Groups") && (
+                      <NavDropdown.Item to="/users/usertab" as={NavLink}>
+                        <i className="fa-fw fa fa-group m-r-xs"></i>
+                        Users/Groups/Roles
+                      </NavDropdown.Item>
+                    )}
+                    {(isAuditor() || isSystemAdmin()) && (
+                      <NavDropdown.Item to="/permissions/models" as={NavLink}>
+                        <i className="fa-fw fa fa-file-o m-r-xs"></i>{" "}
+                        Permissions
+                      </NavDropdown.Item>
+                    )}
+                  </NavDropdown>
+                )}
+              </React.Fragment>
             </Nav>
             <Nav>
               <NavDropdown title={loginId} id="user-dropdown" alignRight>
                 <NavDropdown.Item
-                  class="dropdown-item"
+                  className="dropdown-item"
                   to="/userprofile"
                   as={NavLink}
                 >
                   <i className="fa fa-user"></i> Profile
                 </NavDropdown.Item>
-                <a class="dropdown-item" href={apiUrl} target="_blank">
+                <a class="dropdown-item" href={backboneUrl}>
+                  <i className="fa fa fa-sign-out"></i> Backbone UI
+                </a>
+                <a className="dropdown-item" href={apiUrl} target="_blank">
                   <i className="fa fa-user"></i> API Documentation
                 </a>
                 <NavDropdown.Item
-                  onClick={this.checkKnoxSSO}
+                  onClick={() => checkKnoxSSO(this.props.navigate)}
                   data-id="logout"
                   data-cy="logout"
                 >
